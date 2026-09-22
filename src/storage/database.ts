@@ -3,7 +3,7 @@
  * Uses expo-sqlite with FTS5 for instant local search and category pagination tracking.
  */
 
-import type { SiteCategory, SiteMetadata, SitePost } from "../services/site-scraper/types.ts"
+import type { SiteCategory, SiteMetadata, SitePost } from "../services/site-scraper/types"
 
 export interface TelegramBook {
   fileId: string

@@ -10,8 +10,8 @@ import {
   DEFAULT_MODEL_LIST,
   ModelFallbackManager,
   PINNED_MODEL_ID,
-} from "./model-fallback-manager.ts"
-import { getStoredGeminiApiKey } from "./secure-key-storage.ts"
+} from "./model-fallback-manager"
+import { getStoredGeminiApiKey } from "./secure-key-storage"
 
 export const DEFAULT_DENTAL_PROMPT = `Tôi là bác sĩ Răng Hàm Mặt. Tôi sẽ gửi bạn một bài viết chuyên môn của một người thầy. Hãy đọc toàn bộ bài, rồi tạo một bản tóm lược giúp tôi nắm nội dung nhanh và dễ, đồng thời làm nền để tôi hỏi sâu thêm sau đó.
 

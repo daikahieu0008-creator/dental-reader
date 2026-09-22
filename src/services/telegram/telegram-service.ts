@@ -7,7 +7,7 @@
  * - Fallback to Admin Zalo (0868899853) if file missing or Telegram not installed
  */
 
-import { searchTelegramBooks, seedTelegramBooks, type TelegramBook } from "../../storage/database.ts"
+import { searchTelegramBooks, seedTelegramBooks, type TelegramBook } from "../../storage/database"
 
 export const DEFAULT_TELEGRAM_BOT_USERNAME = "DentalAILibraryBot"
 

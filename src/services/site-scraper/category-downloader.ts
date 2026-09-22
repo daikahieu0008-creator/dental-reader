@@ -14,10 +14,10 @@ import {
   getPostsByCategory,
   savePosts,
   updateCategoryState,
-} from "../../storage/database.ts"
-import { cacheThumbnailOffline, saveArticleHtml } from "../../storage/file-storage.ts"
-import type { SitePost } from "./types.ts"
-import { fetchWordPressPostsByCategory } from "./wordpress.ts"
+} from "../../storage/database"
+import { cacheThumbnailOffline, saveArticleHtml } from "../../storage/file-storage"
+import type { SitePost } from "./types"
+import { fetchWordPressPostsByCategory } from "./wordpress"
 
 export interface DownloadProgress {
   currentLoaded: number

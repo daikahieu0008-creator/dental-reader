@@ -13,7 +13,7 @@ import {
 
 import { AiCuteReIcon } from "../icons/ai_cute_re"
 import { SendPlaneCuteFiIcon } from "../icons/send_plane_cute_fi"
-import { summarizeMedicalArticle } from "../services/gemini"
+import { summarizeArticleWithGemini } from "../services/ai/gemini-service"
 
 interface ChatMessage {
   id: string
@@ -49,8 +49,12 @@ export function ChatAIScreen() {
     setIsLoading(true)
 
     try {
-      const prompt = `Bạn là Trợ lý AI Nha khoa chuyên sâu hỗ trợ bác sĩ Răng Hàm Mặt. Hãy trả lời câu hỏi chuyên môn sau đây một cách súc tích, chuẩn y khoa, dẫn chứng phân loại nếu có:\n\n${userText}`
-      const response = await summarizeMedicalArticle(prompt, "Nha khoa lâm sàng")
+      const response = await summarizeArticleWithGemini({
+        title: "Tư vấn Nha khoa",
+        content: userText,
+        customPrompt:
+          "Bạn là Trợ lý AI Nha khoa chuyên sâu hỗ trợ bác sĩ Răng Hàm Mặt. Hãy trả lời câu hỏi chuyên môn một cách súc tích, chuẩn y khoa, dẫn chứng phân loại và phác đồ nếu có.",
+      })
       const aiMsg: ChatMessage = {
         id: `ai_${Date.now()}`,
         role: "assistant",
