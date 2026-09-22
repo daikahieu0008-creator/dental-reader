@@ -61,6 +61,7 @@ export default function App() {
           siteId={selectedSite.id}
           categoryId={String(selectedCategory.id)}
           categoryName={selectedCategory.name}
+          categoryCount={selectedCategory.count}
           onBack={() => setCurrentScreen("home")}
           onSelectPost={handleSelectPost}
         />

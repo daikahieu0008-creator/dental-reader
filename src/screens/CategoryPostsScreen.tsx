@@ -1,21 +1,25 @@
-import React, { useEffect, useState } from "react"
+import React, { useEffect, useMemo, useState } from "react"
 import {
   ActivityIndicator,
   FlatList,
   Image,
+  Pressable,
   StyleSheet,
   Text,
-  TouchableOpacity,
   View,
 } from "react-native"
 
+import { ArrowLeftCuteReIcon } from "../icons/arrow_left_cute_re"
+import { CheckFilledIcon } from "../icons/check_filled"
+import { Download2CuteFiIcon } from "../icons/download_2_cute_fi"
+import { Eye2CuteReIcon } from "../icons/eye_2_cute_re"
+import { EyeCloseCuteReIcon } from "../icons/eye_close_cute_re"
+import { Refresh2CuteReIcon } from "../icons/refresh_2_cute_re"
 import {
   batchDownloadCategoryPosts,
-  type DownloadProgress,
   loadCategoryPostsInitial,
 } from "../services/site-scraper/category-downloader"
 import type { SitePost } from "../services/site-scraper/types"
-import { getCategoryState } from "../storage/database"
 import { colors } from "../theme/colors"
 
 interface CategoryPostsScreenProps {
@@ -23,6 +27,7 @@ interface CategoryPostsScreenProps {
   siteId: string
   categoryId: string
   categoryName: string
+  categoryCount?: number
   onBack: () => void
   onSelectPost: (post: SitePost) => void
 }
@@ -32,313 +37,349 @@ export function CategoryPostsScreen({
   siteId,
   categoryId,
   categoryName,
+  categoryCount,
   onBack,
   onSelectPost,
 }: CategoryPostsScreenProps) {
   const theme = colors.dark
 
   const [posts, setPosts] = useState<SitePost[]>([])
-  const [isLoadingInitial, setIsLoadingInitial] = useState(true)
-  const [isCompleted, setIsCompleted] = useState(false)
-  const [downloadProgress, setDownloadProgress] = useState<DownloadProgress | null>(null)
-  const [isBatchDownloading, setIsBatchDownloading] = useState(false)
-  const [hideReadPosts, setHideReadPosts] = useState(false)
-  const [readPostIds, setReadPostIds] = useState<Set<string>>(new Set())
+  const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
+  const [hiddenPostIds, setHiddenPostIds] = useState<string[]>([])
+  const [showHiddenOnly, setShowHiddenOnly] = useState(false)
+  const [downloadProgress, setDownloadProgress] = useState<{
+    isDownloading: boolean
+    current: number
+    total: number
+  }>({
+    isDownloading: false,
+    current: 0,
+    total: 0,
+  })
 
   useEffect(() => {
-    loadInitialData()
+    loadData()
   }, [siteId, categoryId])
 
-  const loadInitialData = async () => {
-    setIsLoadingInitial(true)
+  const loadData = async () => {
+    setLoading(true)
     try {
-      const initialPosts = await loadCategoryPostsInitial({
+      const items = await loadCategoryPostsInitial({
         siteUrl,
         siteId,
         categoryId,
-        onDeltaUpdated: (updatedPosts) => {
-          setPosts(updatedPosts)
-        },
+        onDeltaUpdated: (updated) => setPosts(updated),
       })
-      setPosts(initialPosts)
-
-      const state = await getCategoryState(siteId, categoryId)
-      setIsCompleted(state.isCompleted)
-    } catch (err: any) {
-      console.error("Error loading initial posts:", err)
+      setPosts(items)
+    } catch (err) {
+      console.error("Error loading posts:", err)
     } finally {
-      setIsLoadingInitial(false)
+      setLoading(false)
     }
   }
 
-  const handleBatchDownload = async (size: number) => {
-    if (isBatchDownloading || isCompleted) return
-    setIsBatchDownloading(true)
-    setDownloadProgress({
-      currentLoaded: 0,
-      totalInBatch: size === Infinity ? 100 : size,
-      isComplete: false,
-      statusText: "Bắt đầu tải...",
-    })
-
+  const handleRefresh = async () => {
+    if (refreshing || downloadProgress.isDownloading) return
+    setRefreshing(true)
     try {
-      const newItems = await batchDownloadCategoryPosts({
+      const items = await loadCategoryPostsInitial({
         siteUrl,
         siteId,
         categoryId,
-        batchSize: size,
+        onDeltaUpdated: (updated) => setPosts(updated),
+      })
+      setPosts(items)
+    } catch (err) {
+      console.error("Refresh error:", err)
+    } finally {
+      setRefreshing(false)
+    }
+  }
+
+  const handleDownloadAll = async () => {
+    if (downloadProgress.isDownloading) return
+
+    setDownloadProgress({
+      isDownloading: true,
+      current: 0,
+      total: categoryCount || posts.length || 0,
+    })
+
+    try {
+      const downloaded = await batchDownloadCategoryPosts({
+        siteUrl,
+        siteId,
+        categoryId,
+        batchSize: Infinity,
         onProgress: (prog) => {
-          setDownloadProgress(prog)
+          setDownloadProgress({
+            isDownloading: true,
+            current: prog.currentLoaded,
+            total: prog.totalInBatch,
+          })
         },
       })
 
-      if (newItems.length > 0) {
+      if (downloaded.length > 0) {
         setPosts((prev) => {
-          const map = new Map(prev.map((p) => [p.id, p]))
-          for (const item of newItems) {
-            map.set(item.id, item)
+          const map = new Map(prev.map((p) => [String(p.id), p]))
+          for (const item of downloaded) {
+            map.set(String(item.id), { ...item, isDownloaded: true })
           }
           return Array.from(map.values())
         })
       }
-
-      const state = await getCategoryState(siteId, categoryId)
-      setIsCompleted(state.isCompleted)
-    } catch (err: any) {
-      console.error("Batch download error:", err)
+    } catch (err) {
+      console.error("Download all error:", err)
     } finally {
-      setIsBatchDownloading(false)
+      setDownloadProgress({
+        isDownloading: false,
+        current: 0,
+        total: 0,
+      })
     }
   }
 
-  const toggleReadStatus = (postId: string) => {
-    setReadPostIds((prev) => {
-      const next = new Set(prev)
-      if (next.has(postId)) next.delete(postId)
-      else next.add(postId)
-      return next
+  const handleToggleHidePost = (postId: string | number) => {
+    const idStr = String(postId)
+    setHiddenPostIds((prev) =>
+      prev.includes(idStr) ? prev.filter((id) => id !== idStr) : [...prev, idStr],
+    )
+  }
+
+  const visiblePosts = useMemo(() => {
+    return posts.filter((p) => {
+      const isHidden = hiddenPostIds.includes(String(p.id))
+      return showHiddenOnly ? isHidden : !isHidden
     })
-  }
+  }, [posts, hiddenPostIds, showHiddenOnly])
 
-  const visiblePosts = posts.filter((p) => {
-    if (hideReadPosts && readPostIds.has(p.id)) return false
-    return true
-  })
+  const hiddenCount = useMemo(() => {
+    return posts.filter((p) => hiddenPostIds.includes(String(p.id))).length
+  }, [posts, hiddenPostIds])
 
-  const renderPostItem = ({ item }: { item: SitePost }) => {
-    const isRead = readPostIds.has(item.id)
-    const hasSummary = Boolean((item as any).geminiSummary)
-
-    return (
-      <TouchableOpacity
-        style={[
-          styles.postCard,
-          {
-            backgroundColor: theme.card,
-            borderColor: theme.cardBorder,
-            opacity: isRead ? 0.6 : 1,
-          },
-        ]}
-        onPress={() => {
-          toggleReadStatus(item.id)
-          onSelectPost(item)
-        }}
-        activeOpacity={0.8}
-      >
-        <View style={styles.postRow}>
-          {item.thumbnail ? (
-            <Image source={{ uri: item.thumbnail }} style={styles.thumbnail} />
-          ) : (
-            <View style={[styles.thumbnailPlaceholder, { backgroundColor: theme.secondaryCard }]}>
-              <Text style={{ fontSize: 22 }}>🦷</Text>
-            </View>
-          )}
-
-          <View style={styles.postContentCol}>
-            <Text style={[styles.postTitle, { color: theme.text }]} numberOfLines={2}>
-              {item.title}
-            </Text>
-
-            {item.excerpt ? (
-              <Text style={[styles.postExcerpt, { color: theme.textSecondary }]} numberOfLines={2}>
-                {item.excerpt}
-              </Text>
-            ) : null}
-
-            <View style={styles.postMetaRow}>
-              {item.isDownloaded ? (
-                <View style={[styles.badge, { backgroundColor: theme.successBg }]}>
-                  <Text style={[styles.badgeText, { color: theme.success }]}>✓ Đã lưu máy</Text>
-                </View>
-              ) : null}
-
-              {hasSummary ? (
-                <View style={[styles.badge, { backgroundColor: theme.aiPurpleBg }]}>
-                  <Text style={[styles.badgeText, { color: theme.aiPurpleLight }]}>✦ Đã tóm tắt</Text>
-                </View>
-              ) : null}
-
-              {item.publishedAt ? (
-                <Text style={[styles.dateText, { color: theme.textMuted }]}>
-                  {item.publishedAt.slice(0, 10)}
-                </Text>
-              ) : null}
-            </View>
-          </View>
-        </View>
-      </TouchableOpacity>
-    )
-  }
-
-  const renderFooter = () => {
-    if (isLoadingInitial) return null
-
-    return (
-      <View style={styles.footerContainer}>
-        {/* Batch download progress banner */}
-        {downloadProgress && (
-          <View
-            style={[
-              styles.progressCard,
-              {
-                backgroundColor: theme.secondaryCard,
-                borderColor: theme.separator,
-              },
-            ]}
-          >
-            <View style={styles.progressRow}>
-              <Text style={[styles.progressText, { color: theme.text }]}>
-                {downloadProgress.statusText}
-              </Text>
-              <Text style={[styles.progressNumbers, { color: theme.accentLight }]}>
-                {downloadProgress.currentLoaded} / {downloadProgress.totalInBatch}
-              </Text>
-            </View>
-            <View style={[styles.progressBarTrack, { backgroundColor: theme.cardBorder }]}>
-              <View
-                style={[
-                  styles.progressBarFill,
-                  {
-                    backgroundColor: theme.accent,
-                    width: `${Math.min(
-                      100,
-                      (downloadProgress.currentLoaded /
-                        Math.max(1, downloadProgress.totalInBatch)) *
-                        100,
-                    )}%`,
-                  },
-                ]}
-              />
-            </View>
-          </View>
-        )}
-
-        {isCompleted ? (
-          <View style={[styles.completedBanner, { backgroundColor: theme.secondaryCard }]}>
-            <Text style={[styles.completedText, { color: theme.success }]}>
-              ✓ Đã tải về toàn bộ bài viết trong chuyên mục này ({posts.length} bài)
-            </Text>
-          </View>
-        ) : (
-          <View style={styles.buttonsContainer}>
-            <Text style={[styles.footerHint, { color: theme.textMuted }]}>
-              Tải thêm nội dung để đọc ngoại tuyến (không cần mạng):
-            </Text>
-
-            <View style={styles.buttonRow}>
-              <TouchableOpacity
-                style={[styles.loadBtn, { backgroundColor: theme.card, borderColor: theme.separator }]}
-                onPress={() => handleBatchDownload(10)}
-                disabled={isBatchDownloading}
-              >
-                <Text style={[styles.loadBtnText, { color: theme.text }]}>+ 10 bài</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.loadBtn, { backgroundColor: theme.card, borderColor: theme.separator }]}
-                onPress={() => handleBatchDownload(50)}
-                disabled={isBatchDownloading}
-              >
-                <Text style={[styles.loadBtnText, { color: theme.text }]}>+ 50 bài</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.loadBtn, { backgroundColor: theme.accent }]}
-                onPress={() => handleBatchDownload(Infinity)}
-                disabled={isBatchDownloading}
-              >
-                {isBatchDownloading ? (
-                  <ActivityIndicator size="small" color="#FFF" />
-                ) : (
-                  <Text style={[styles.loadBtnText, { color: "#FFF", fontWeight: "700" }]}>
-                    Tải tất cả
-                  </Text>
-                )}
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
-      </View>
-    )
-  }
+  const allDownloaded = posts.length > 0 && posts.every((p) => p.isDownloaded)
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
-      {/* Header */}
-      <View style={[styles.header, { borderBottomColor: theme.separator }]}>
-        <TouchableOpacity style={styles.backBtn} onPress={onBack}>
-          <Text style={[styles.backText, { color: theme.accentLight }]}>← Danh mục</Text>
-        </TouchableOpacity>
-        <View style={{ flex: 1 }}>
-          <Text style={[styles.headerTitle, { color: theme.text }]} numberOfLines={1}>
-            {categoryName}
-          </Text>
-          <Text style={[styles.headerSub, { color: theme.textMuted }]}>
-            {posts.length} bài đã lưu trên máy
-          </Text>
-        </View>
+      {/* Navigation Header View (Folo Style) */}
+      <View style={[styles.navHeader, { borderBottomColor: theme.cardBorder }]}>
+        <Pressable onPress={onBack} style={styles.headerBtn} hitSlop={10}>
+          <ArrowLeftCuteReIcon width={20} height={20} color={theme.text} />
+        </Pressable>
 
-        <TouchableOpacity
-          style={[
-            styles.hideToggleBtn,
-            { backgroundColor: hideReadPosts ? theme.accentBg : theme.secondaryCard },
-          ]}
-          onPress={() => setHideReadPosts(!hideReadPosts)}
+        <Text style={[styles.navTitle, { color: theme.text }]} numberOfLines={1}>
+          {categoryName}
+        </Text>
+
+        <Pressable
+          onPress={handleRefresh}
+          disabled={refreshing || downloadProgress.isDownloading}
+          style={styles.headerBtn}
+          hitSlop={10}
         >
-          <Text
-            style={{
-              color: hideReadPosts ? theme.accentLight : theme.textSecondary,
-              fontSize: 12,
-              fontWeight: "600",
-            }}
-          >
-            {hideReadPosts ? "Hiện bài đã xem" : "Ẩn đã xem"}
-          </Text>
-        </TouchableOpacity>
+          {refreshing ? (
+            <ActivityIndicator size="small" color={theme.accent} />
+          ) : (
+            <Refresh2CuteReIcon width={19} height={19} color={theme.text} />
+          )}
+        </Pressable>
       </View>
 
-      {/* Main List */}
-      {isLoadingInitial ? (
+      {/* Top Action Bar (Folo Style: Orange Download Button + Hidden Posts Pill) */}
+      <View
+        style={[
+          styles.actionBar,
+          {
+            backgroundColor: theme.background,
+            borderBottomColor: theme.cardBorder,
+          },
+        ]}
+      >
+        <View style={styles.actionRow}>
+          {/* Download all button */}
+          <Pressable
+            onPress={handleDownloadAll}
+            disabled={downloadProgress.isDownloading || allDownloaded}
+            style={[
+              styles.downloadAllBtn,
+              allDownloaded
+                ? { backgroundColor: "rgba(34, 197, 94, 0.15)", borderWidth: 1, borderColor: "rgba(34, 197, 94, 0.3)" }
+                : downloadProgress.isDownloading
+                ? { backgroundColor: "rgba(255, 92, 0, 0.2)" }
+                : { backgroundColor: theme.accent },
+            ]}
+          >
+            {downloadProgress.isDownloading ? (
+              <>
+                <ActivityIndicator size="small" color={theme.accent} />
+                <Text style={[styles.downloadAllText, { color: theme.accent }]}>
+                  Đang tải {downloadProgress.current}/{downloadProgress.total} bài...
+                </Text>
+              </>
+            ) : allDownloaded ? (
+              <>
+                <CheckFilledIcon width={15} height={15} color="#22C55E" />
+                <Text style={[styles.downloadAllText, { color: "#22C55E" }]}>
+                  Đã tải toàn bộ ({posts.length} bài)
+                </Text>
+              </>
+            ) : (
+              <>
+                <Download2CuteFiIcon width={15} height={15} color="#FFFFFF" />
+                <Text style={styles.downloadAllText}>
+                  Tải về toàn bộ danh mục ({categoryCount || posts.length} bài)
+                </Text>
+              </>
+            )}
+          </Pressable>
+
+          {/* Toggle hidden posts button */}
+          {hiddenCount > 0 ? (
+            <Pressable
+              onPress={() => setShowHiddenOnly((prev) => !prev)}
+              style={[
+                styles.hiddenPillBtn,
+                showHiddenOnly
+                  ? { backgroundColor: theme.accentBg, borderColor: theme.accent }
+                  : { backgroundColor: theme.card, borderColor: theme.cardBorder },
+              ]}
+            >
+              {showHiddenOnly ? (
+                <Eye2CuteReIcon width={15} height={15} color={theme.accent} />
+              ) : (
+                <EyeCloseCuteReIcon width={15} height={15} color={theme.textSecondary} />
+              )}
+              <Text
+                style={[
+                  styles.hiddenPillText,
+                  { color: showHiddenOnly ? theme.accent : theme.textSecondary },
+                ]}
+              >
+                {showHiddenOnly ? "Hiện tất cả" : `Bài ẩn (${hiddenCount})`}
+              </Text>
+            </Pressable>
+          ) : null}
+        </View>
+      </View>
+
+      {/* Main Posts List */}
+      {loading ? (
         <View style={styles.centerContainer}>
           <ActivityIndicator size="large" color={theme.accent} />
           <Text style={[styles.loadingText, { color: theme.textSecondary }]}>
-            Đang tải 10 bài đầu tiên...
+            Đang nạp bài viết từ "{categoryName}"...
+          </Text>
+        </View>
+      ) : visiblePosts.length === 0 ? (
+        <View style={styles.centerContainer}>
+          <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
+            {showHiddenOnly
+              ? "Không có bài viết nào bị ẩn."
+              : "Không có bài viết nào trong danh mục này."}
           </Text>
         </View>
       ) : (
         <FlatList
           data={visiblePosts}
-          keyExtractor={(item) => item.id}
-          renderItem={renderPostItem}
+          keyExtractor={(item) => String(item.id)}
           contentContainerStyle={styles.listContent}
-          ListFooterComponent={renderFooter}
-          ListEmptyComponent={
-            <View style={styles.centerContainer}>
-              <Text style={{ color: theme.textMuted, fontSize: 15 }}>
-                Chưa có bài viết nào trong chuyên mục này.
-              </Text>
-            </View>
-          }
+          renderItem={({ item }) => {
+            const isHidden = hiddenPostIds.includes(String(item.id))
+            const thumbUri = item.thumbnail || item.featuredMedia
+
+            return (
+              <Pressable
+                onPress={() => onSelectPost(item)}
+                style={[
+                  styles.postCard,
+                  {
+                    backgroundColor: theme.card,
+                    borderColor: theme.cardBorder,
+                  },
+                ]}
+              >
+                {/* Full-width banner thumbnail (Folo style: h-44 cover) */}
+                {thumbUri ? (
+                  <Image
+                    source={{ uri: thumbUri }}
+                    style={styles.bannerThumbnail}
+                    resizeMode="cover"
+                  />
+                ) : null}
+
+                <View style={styles.cardBody}>
+                  <View style={styles.titleRow}>
+                    <Text
+                      style={[styles.postTitle, { color: theme.text }]}
+                      numberOfLines={2}
+                    >
+                      {item.title}
+                    </Text>
+
+                    {/* Nút Ẩn / Bỏ ẩn bài viết */}
+                    <Pressable
+                      onPress={(e) => {
+                        e.stopPropagation?.()
+                        handleToggleHidePost(item.id)
+                      }}
+                      style={[
+                        styles.eyeBtn,
+                        { backgroundColor: "rgba(255, 255, 255, 0.08)" },
+                      ]}
+                      hitSlop={8}
+                    >
+                      {isHidden ? (
+                        <Eye2CuteReIcon width={16} height={16} color={theme.accent} />
+                      ) : (
+                        <EyeCloseCuteReIcon
+                          width={16}
+                          height={16}
+                          color={theme.textSecondary}
+                        />
+                      )}
+                    </Pressable>
+                  </View>
+
+                  {/* Excerpt */}
+                  {item.excerpt ? (
+                    <Text
+                      style={[styles.postExcerpt, { color: theme.textSecondary }]}
+                      numberOfLines={2}
+                    >
+                      {item.excerpt}
+                    </Text>
+                  ) : null}
+
+                  {/* Bottom info row: Date & Offline badge */}
+                  <View
+                    style={[
+                      styles.bottomMetaRow,
+                      { borderTopColor: "rgba(255, 255, 255, 0.06)" },
+                    ]}
+                  >
+                    <Text style={[styles.dateText, { color: theme.textMuted }]}>
+                      {item.publishedAt
+                        ? item.publishedAt.slice(0, 10)
+                        : item.date
+                        ? item.date.slice(0, 10)
+                        : ""}
+                    </Text>
+
+                    {item.isDownloaded ? (
+                      <View style={[styles.offlineBadge, { backgroundColor: theme.successBg }]}>
+                        <CheckFilledIcon width={11} height={11} color="#22C55E" />
+                        <Text style={[styles.offlineText, { color: theme.success }]}>
+                          Offline
+                        </Text>
+                      </View>
+                    ) : null}
+                  </View>
+                </View>
+              </Pressable>
+            )
+          }}
         />
       )}
     </View>
@@ -349,164 +390,140 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  header: {
+  navHeader: {
     paddingTop: 48,
     paddingHorizontal: 16,
-    paddingBottom: 14,
+    paddingBottom: 12,
     borderBottomWidth: 1,
     flexDirection: "row",
     alignItems: "center",
-  },
-  backBtn: {
-    marginRight: 10,
-    paddingVertical: 4,
-  },
-  backText: {
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  headerTitle: {
-    fontSize: 16,
-    fontWeight: "700",
-  },
-  headerSub: {
-    fontSize: 12,
-  },
-  hideToggleBtn: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 6,
-  },
-  listContent: {
-    padding: 14,
-    gap: 12,
-  },
-  postCard: {
-    borderWidth: 1,
-    borderRadius: 12,
-    padding: 12,
-  },
-  postRow: {
-    flexDirection: "row",
-    gap: 12,
-  },
-  thumbnail: {
-    width: 80,
-    height: 80,
-    borderRadius: 8,
-    backgroundColor: "#1E293B",
-  },
-  thumbnailPlaceholder: {
-    width: 80,
-    height: 80,
-    borderRadius: 8,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  postContentCol: {
-    flex: 1,
     justifyContent: "space-between",
   },
-  postTitle: {
-    fontSize: 15,
+  headerBtn: {
+    padding: 6,
+  },
+  navTitle: {
+    fontSize: 17,
     fontWeight: "700",
-    lineHeight: 20,
-    marginBottom: 4,
+    textAlign: "center",
+    flex: 1,
+    marginHorizontal: 8,
   },
-  postExcerpt: {
-    fontSize: 13,
-    lineHeight: 18,
-    marginBottom: 6,
+  actionBar: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
   },
-  postMetaRow: {
+  actionRow: {
     flexDirection: "row",
     alignItems: "center",
+    gap: 10,
+  },
+  downloadAllBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
     gap: 8,
-    flexWrap: "wrap",
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
   },
-  badge: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  badgeText: {
-    fontSize: 11,
+  downloadAllText: {
+    color: "#FFFFFF",
+    fontSize: 13,
     fontWeight: "600",
   },
-  dateText: {
-    fontSize: 11,
+  hiddenPillBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+  },
+  hiddenPillText: {
+    fontSize: 12,
+    fontWeight: "500",
   },
   centerContainer: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    padding: 32,
+    padding: 24,
   },
   loadingText: {
     marginTop: 12,
     fontSize: 14,
   },
-  footerContainer: {
-    marginTop: 14,
-    marginBottom: 32,
-  },
-  progressCard: {
-    borderWidth: 1,
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 14,
-  },
-  progressRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: 8,
-  },
-  progressText: {
-    fontSize: 13,
-    fontWeight: "600",
-  },
-  progressNumbers: {
-    fontSize: 13,
-    fontWeight: "700",
-  },
-  progressBarTrack: {
-    height: 6,
-    borderRadius: 3,
-    overflow: "hidden",
-  },
-  progressBarFill: {
-    height: "100%",
-  },
-  completedBanner: {
-    padding: 14,
-    borderRadius: 10,
-    alignItems: "center",
-  },
-  completedText: {
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  buttonsContainer: {
-    gap: 10,
-  },
-  footerHint: {
-    fontSize: 12,
+  emptyText: {
+    fontSize: 15,
     textAlign: "center",
   },
-  buttonRow: {
-    flexDirection: "row",
-    gap: 10,
+  listContent: {
+    padding: 16,
+    paddingBottom: 40,
   },
-  loadBtn: {
-    flex: 1,
-    height: 42,
-    borderRadius: 8,
+  postCard: {
+    borderRadius: 16,
     borderWidth: 1,
+    marginBottom: 14,
+    overflow: "hidden",
+  },
+  bannerThumbnail: {
+    width: "100%",
+    height: 180,
+    backgroundColor: "#27272A",
+  },
+  cardBody: {
+    padding: 14,
+  },
+  titleRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 8,
+  },
+  postTitle: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: "700",
+    lineHeight: 22,
+  },
+  eyeBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     alignItems: "center",
     justifyContent: "center",
   },
-  loadBtnText: {
-    fontSize: 14,
+  postExcerpt: {
+    fontSize: 13,
+    lineHeight: 19,
+    marginTop: 6,
+  },
+  bottomMetaRow: {
+    marginTop: 12,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  dateText: {
+    fontSize: 12,
+  },
+  offlineBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 12,
+  },
+  offlineText: {
+    fontSize: 10,
     fontWeight: "600",
   },
 })
