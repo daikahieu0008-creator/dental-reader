@@ -19,7 +19,7 @@ import {
   type DownloadProgress,
   loadCategoryPostsInitial,
 } from "../services/site-scraper/category-downloader"
-import type { SitePost } from "../services/site-scraper/types"
+import type { SiteMetadata, SitePost } from "../services/site-scraper/types"
 import {
   getCategoryState,
   getHiddenPostIds,
@@ -30,20 +30,24 @@ import { colors } from "../theme/colors"
 interface CategoryPostsScreenProps {
   siteUrl: string
   siteId: string
+  site?: SiteMetadata | null
   categoryId: string
   categoryName: string
   categoryCount?: number
   onBack: () => void
   onSelectPost: (post: SitePost) => void
+  onOpenPromptSettings?: (site: SiteMetadata) => void
 }
 
 export function CategoryPostsScreen({
   siteUrl,
   siteId,
+  site,
   categoryId,
   categoryName,
   onBack,
   onSelectPost,
+  onOpenPromptSettings,
 }: CategoryPostsScreenProps) {
   const theme = colors.dark
 
@@ -272,18 +276,32 @@ export function CategoryPostsScreen({
           {categoryName}
         </Text>
 
-        <Pressable
-          onPress={handleRefresh}
-          disabled={refreshing || isBatchDownloading}
-          style={styles.headerBtn}
-          hitSlop={10}
-        >
-          {refreshing ? (
-            <ActivityIndicator size="small" color={theme.accent} />
-          ) : (
-            <Refresh2CuteReIcon width={19} height={19} color={theme.text} />
-          )}
-        </Pressable>
+        <View style={styles.headerRightRow}>
+          {site && onOpenPromptSettings ? (
+            <Pressable
+              onPress={() => onOpenPromptSettings(site)}
+              style={styles.headerBtn}
+              hitSlop={10}
+            >
+              <Text style={{ fontSize: 13, color: theme.aiPurpleLight, fontWeight: "700" }}>
+                ⚙ AI
+              </Text>
+            </Pressable>
+          ) : null}
+
+          <Pressable
+            onPress={handleRefresh}
+            disabled={refreshing || isBatchDownloading}
+            style={styles.headerBtn}
+            hitSlop={10}
+          >
+            {refreshing ? (
+              <ActivityIndicator size="small" color={theme.accent} />
+            ) : (
+              <Refresh2CuteReIcon width={19} height={19} color={theme.text} />
+            )}
+          </Pressable>
+        </View>
       </View>
 
       {/* Hidden Posts Filter Bar (Only shown when there are hidden posts) */}
@@ -453,6 +471,11 @@ const styles = StyleSheet.create({
   },
   headerBtn: {
     padding: 6,
+  },
+  headerRightRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
   },
   navTitle: {
     fontSize: 17,

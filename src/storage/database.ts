@@ -118,6 +118,36 @@ export async function initDatabase(db?: any): Promise<void> {
       caption
     );
   `)
+
+  try {
+    await activeDb.execAsync("ALTER TABLE sites ADD COLUMN custom_prompt TEXT;")
+  } catch {}
+}
+
+// ---------------- Site Custom Prompt Methods ----------------
+
+const memSitePrompts = new Map<string, string>()
+
+export async function getSiteCustomPrompt(siteId: string): Promise<string | null> {
+  const db = await getDb()
+  if (!db) return memSitePrompts.get(siteId) || null
+  try {
+    const row: any = await db.getFirstAsync("SELECT custom_prompt FROM sites WHERE id = ?", [siteId])
+    return row?.custom_prompt || memSitePrompts.get(siteId) || null
+  } catch {
+    return memSitePrompts.get(siteId) || null
+  }
+}
+
+export async function saveSiteCustomPrompt(siteId: string, prompt: string): Promise<void> {
+  memSitePrompts.set(siteId, prompt)
+  const db = await getDb()
+  if (!db) return
+  try {
+    await db.runAsync("UPDATE sites SET custom_prompt = ? WHERE id = ?", [prompt, siteId])
+  } catch (err) {
+    console.error("Error saving site custom prompt:", err)
+  }
 }
 
 // ---------------- Site Methods ----------------

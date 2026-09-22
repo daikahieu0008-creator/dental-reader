@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react"
+import React, { useEffect, useMemo, useRef, useState } from "react"
 import {
   ActivityIndicator,
   Alert,
@@ -10,7 +10,12 @@ import {
   TouchableOpacity,
   View,
 } from "react-native"
+import * as Clipboard from "expo-clipboard"
+import { WebView } from "react-native-webview"
 
+import { FormattedMarkdownSummary } from "../components/FormattedMarkdownSummary"
+import { Eye2CuteReIcon } from "../icons/eye_2_cute_re"
+import { EyeCloseCuteReIcon } from "../icons/eye_close_cute_re"
 import {
   ADMIN_PHONE,
   ADMIN_ZALO_URL,
@@ -28,20 +33,31 @@ import {
   type VerificationResult,
   verifySummaryNumbers,
 } from "../services/ai/quality-checker"
-import { Eye2CuteReIcon } from "../icons/eye_2_cute_re"
-import { EyeCloseCuteReIcon } from "../icons/eye_close_cute_re"
-import type { SitePost } from "../services/site-scraper/types"
-import { getHiddenPostIds, toggleHidePost, updatePostSummary } from "../storage/database"
+import type { SiteMetadata, SitePost } from "../services/site-scraper/types"
+import {
+  getHiddenPostIds,
+  getSiteCustomPrompt,
+  toggleHidePost,
+  updatePostSummary,
+} from "../storage/database"
 import { readArticleHtml } from "../storage/file-storage"
 import { colors } from "../theme/colors"
 
 interface PostDetailScreenProps {
   post: SitePost
+  site?: SiteMetadata | null
   siteName?: string
   onBack: () => void
+  onOpenPromptSettings?: (site: SiteMetadata) => void
 }
 
-export function PostDetailScreen({ post, siteName, onBack }: PostDetailScreenProps) {
+export function PostDetailScreen({
+  post,
+  site,
+  siteName,
+  onBack,
+  onOpenPromptSettings,
+}: PostDetailScreenProps) {
   const theme = colors.dark
 
   const [rawHtml, setRawHtml] = useState("")
@@ -67,6 +83,10 @@ export function PostDetailScreen({ post, siteName, onBack }: PostDetailScreenPro
   // Hidden State
   const [isHidden, setIsHidden] = useState(false)
 
+  // WebView Auto-Height
+  const [webViewHeight, setWebViewHeight] = useState(400)
+  const webViewRef = useRef<WebView>(null)
+
   useEffect(() => {
     loadArticleContent()
     getHiddenPostIds().then((ids) => {
@@ -80,6 +100,16 @@ export function PostDetailScreen({ post, siteName, onBack }: PostDetailScreenPro
       setIsHidden(newStatus)
     } catch (err) {
       console.error("Error toggling hide post:", err)
+    }
+  }
+
+  const handleCopySummary = async () => {
+    if (!summary) return
+    try {
+      await Clipboard.setStringAsync(summary)
+      Alert.alert("Đã sao chép", "Đã chép nội dung tóm tắt vào bộ nhớ tạm.")
+    } catch {
+      Alert.alert("Thông báo", summary)
     }
   }
 
@@ -107,6 +137,103 @@ export function PostDetailScreen({ post, siteName, onBack }: PostDetailScreenPro
     }
   }
 
+  const htmlSource = useMemo(() => {
+    const textColor = "#E4E4E7"
+    const bgColor = "#18181B"
+    const linkColor = "#FF5C00"
+    const blockquoteBorder = "rgba(255, 92, 0, 0.6)"
+    const blockquoteBg = "rgba(255, 255, 255, 0.04)"
+    const tableBorder = "rgba(255, 255, 255, 0.12)"
+
+    const htmlBody =
+      rawHtml || post.content || `<p>${post.excerpt || cleanText || "Không có nội dung chi tiết."}</p>`
+
+    return `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+        <style>
+          * { box-sizing: border-box; }
+          body {
+            margin: 0;
+            padding: 4px 12px 30px 12px;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            font-size: 16px;
+            line-height: 1.68;
+            color: ${textColor};
+            background-color: ${bgColor};
+            word-wrap: break-word;
+          }
+          img, video, iframe {
+            max-width: 100% !important;
+            height: auto !important;
+            border-radius: 12px;
+            margin: 14px 0;
+            display: block;
+          }
+          h1, h2, h3, h4, h5, h6 {
+            color: #FFFFFF;
+            font-weight: 700;
+            line-height: 1.35;
+            margin-top: 20px;
+            margin-bottom: 10px;
+          }
+          h1 { font-size: 22px; }
+          h2 { font-size: 19px; }
+          h3 { font-size: 17px; }
+          p { margin: 12px 0; }
+          a { color: ${linkColor}; text-decoration: none; }
+          blockquote {
+            margin: 14px 0;
+            padding: 8px 14px;
+            border-left: 4px solid ${blockquoteBorder};
+            background: ${blockquoteBg};
+            border-radius: 4px;
+            font-style: italic;
+          }
+          table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 16px 0;
+          }
+          th, td {
+            border: 1px solid ${tableBorder};
+            padding: 8px 10px;
+            text-align: left;
+            font-size: 14px;
+          }
+          th {
+            background: rgba(255, 255, 255, 0.06);
+            color: #FFFFFF;
+            font-weight: 700;
+          }
+          pre, code {
+            font-family: monospace;
+            background: rgba(255, 255, 255, 0.08);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 13px;
+          }
+        </style>
+      </head>
+      <body>
+        ${htmlBody}
+        <script>
+          function sendHeight() {
+            var height = document.documentElement.scrollHeight || document.body.scrollHeight;
+            window.ReactNativeWebView.postMessage(JSON.stringify({ type: "HEIGHT", height: height }));
+          }
+          window.addEventListener("load", sendHeight);
+          setTimeout(sendHeight, 200);
+          setTimeout(sendHeight, 600);
+          setTimeout(sendHeight, 1500);
+        </script>
+      </body>
+      </html>
+    `
+  }, [rawHtml, post.content, post.excerpt, cleanText])
+
   // Generate AI Summary
   const handleSummarize = async (forcedModel?: string) => {
     if (isSummarizing) return
@@ -115,11 +242,15 @@ export function PostDetailScreen({ post, siteName, onBack }: PostDetailScreenPro
     setAdminReport(null)
 
     try {
+      const siteId = (post as any).siteId || site?.id || ""
+      const customPrompt = siteId ? await getSiteCustomPrompt(siteId) : null
+
       const result = await summarizeArticleWithGemini({
         title: post.title,
         content: rawHtml || post.content || cleanText,
         excerpt: post.excerpt,
-        siteName: siteName || "Tự học RHM",
+        siteName: siteName || site?.name || "Tự học RHM",
+        customPrompt: customPrompt || undefined,
         forcedModelId: forcedModel,
       })
 
@@ -315,19 +446,43 @@ export function PostDetailScreen({ post, siteName, onBack }: PostDetailScreenPro
               ) : null}
             </View>
 
-            <TouchableOpacity
-              style={[styles.resummarizeBtn, { backgroundColor: theme.secondaryCard }]}
-              onPress={() => handleSummarize()}
-              disabled={isSummarizing}
-            >
-              {isSummarizing ? (
-                <ActivityIndicator size="small" color={theme.accentLight} />
-              ) : (
-                <Text style={{ color: theme.textSecondary, fontSize: 12, fontWeight: "600" }}>
-                  {summary ? "Tóm tắt lại" : "Bắt đầu tóm tắt"}
-                </Text>
-              )}
-            </TouchableOpacity>
+            <View style={styles.aiActionsRow}>
+              {site && onOpenPromptSettings ? (
+                <TouchableOpacity
+                  style={[styles.smallActionBtn, { backgroundColor: theme.secondaryCard }]}
+                  onPress={() => onOpenPromptSettings(site)}
+                >
+                  <Text style={{ color: theme.aiPurpleLight, fontSize: 12, fontWeight: "600" }}>
+                    ⚙ Prompt
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
+
+              {summary ? (
+                <TouchableOpacity
+                  style={[styles.smallActionBtn, { backgroundColor: theme.secondaryCard }]}
+                  onPress={handleCopySummary}
+                >
+                  <Text style={{ color: theme.textSecondary, fontSize: 12, fontWeight: "600" }}>
+                    📋 Chép
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
+
+              <TouchableOpacity
+                style={[styles.resummarizeBtn, { backgroundColor: theme.secondaryCard }]}
+                onPress={() => handleSummarize()}
+                disabled={isSummarizing}
+              >
+                {isSummarizing ? (
+                  <ActivityIndicator size="small" color={theme.accentLight} />
+                ) : (
+                  <Text style={{ color: theme.textSecondary, fontSize: 12, fontWeight: "600" }}>
+                    {summary ? "Tóm tắt lại" : "Bắt đầu tóm tắt"}
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </View>
           </View>
 
           {/* Verification check result */}
@@ -365,7 +520,7 @@ export function PostDetailScreen({ post, siteName, onBack }: PostDetailScreenPro
           {/* Summary Content */}
           {summary ? (
             <View style={[styles.summaryBox, { backgroundColor: theme.secondaryCard }]}>
-              <Text style={[styles.summaryText, { color: theme.text }]}>{summary}</Text>
+              <FormattedMarkdownSummary content={summary} />
             </View>
           ) : !isSummarizing && !summaryError ? (
             <View style={styles.emptySummaryBox}>
@@ -491,15 +646,32 @@ export function PostDetailScreen({ post, siteName, onBack }: PostDetailScreenPro
           </View>
         ) : null}
 
-        {/* Full Article Content */}
+        {/* Full Article Content (WebView with complete original HTML: images, tables, quotes, formatting) */}
         <View style={[styles.contentCard, { backgroundColor: theme.card, borderColor: theme.cardBorder }]}>
           <Text style={[styles.contentHeader, { color: theme.text }]}>📖 Toàn Văn Bài Viết Gốc</Text>
           {isLoadingArticle ? (
-            <ActivityIndicator size="small" color={theme.accent} />
+            <ActivityIndicator size="small" color={theme.accent} style={{ padding: 24 }} />
           ) : (
-            <Text style={[styles.bodyText, { color: theme.textSecondary }]}>
-              {cleanText}
-            </Text>
+            <View style={[styles.webViewWrapper, { height: Math.max(webViewHeight, 300) }]}>
+              <WebView
+                ref={webViewRef}
+                originWhitelist={["*"]}
+                source={{ html: htmlSource }}
+                style={[styles.webView, { backgroundColor: theme.card }]}
+                scrollEnabled={false}
+                nestedScrollEnabled={false}
+                javaScriptEnabled={true}
+                domStorageEnabled={true}
+                onMessage={(event) => {
+                  try {
+                    const data = JSON.parse(event.nativeEvent.data)
+                    if (data.type === "HEIGHT" && data.height) {
+                      setWebViewHeight(data.height + 30)
+                    }
+                  } catch (e) {}
+                }}
+              />
+            </View>
           )}
         </View>
       </ScrollView>
@@ -767,5 +939,28 @@ const styles = StyleSheet.create({
   bodyText: {
     fontSize: 14,
     lineHeight: 24,
+  },
+  aiActionsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  smallActionBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+  },
+  webViewWrapper: {
+    width: "100%",
+    borderRadius: 12,
+    overflow: "hidden",
+    marginTop: 8,
+  },
+  webView: {
+    width: "100%",
+    height: "100%",
+    opacity: 0.99,
   },
 })
