@@ -1,0 +1,66 @@
+name: 🚀 Build DentalAI Reader Release APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - dev
+      - master
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-apk:
+    name: 📱 Build Standalone DentalAI Reader APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📦 Checkout mã nguồn
+        uses: actions/checkout@v4
+
+      - name: 🏗 Cài đặt Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: ☕ Cài đặt Java 17 (Zulu)
+        uses: actions/setup-java@v4
+        with:
+          java-version: "17"
+          distribution: "zulu"
+
+      - name: 🐘 Cấu hình Gradle Cache
+        uses: gradle/actions/setup-gradle@v3
+
+      - name: 🤖 Cài đặt Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+
+      - name: 📥 Cài đặt npm dependencies
+        run: npm install
+
+      - name: ⚙️ Tạo mã nguồn Android Native (Expo Prebuild)
+        run: |
+          npx expo prebuild --platform android --clean --no-install
+          # Sử dụng debug signing cho release APK để cài trực tiếp không cần chứng chỉ bảo mật
+          sed -i 's/signingConfig signingConfigs.release/signingConfig signingConfigs.debug/g' android/app/build.gradle
+          sed -i 's/minifyEnabled enableProguardInReleaseBuilds/minifyEnabled false/g' android/app/build.gradle
+        env:
+          EXPO_NO_TELEMETRY: "1"
+
+      - name: 🔨 Biên dịch Standalone Android APK (Gradle)
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon --stacktrace
+
+      - name: 📤 Xuất bản file APK lên GitHub Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dental-ai-reader-release-apk
+          path: android/app/build/outputs/apk/release/*.apk
+          retention-days: 30
