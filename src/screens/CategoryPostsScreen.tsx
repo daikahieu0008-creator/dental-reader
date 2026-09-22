@@ -10,6 +10,7 @@ import {
 } from "react-native"
 
 import { ArrowLeftCuteReIcon } from "../icons/arrow_left_cute_re"
+import { CachedImage, getOrDownloadLocalImage } from "../components/CachedImage"
 import { CheckFilledIcon } from "../icons/check_filled"
 import { Eye2CuteReIcon } from "../icons/eye_2_cute_re"
 import { EyeCloseCuteReIcon } from "../icons/eye_close_cute_re"
@@ -64,6 +65,18 @@ export function CategoryPostsScreen({
     loadData()
     loadHiddenIds()
   }, [siteId, categoryId])
+
+  // Background pre-cache all thumbnails to permanent disk storage
+  useEffect(() => {
+    if (posts.length === 0) return
+    const urls = posts
+      .map((p) => p.thumbnail || p.featuredMedia)
+      .filter((u): u is string => !!u && u.startsWith("http"))
+
+    urls.forEach((u) => {
+      getOrDownloadLocalImage(u).catch(() => {})
+    })
+  }, [posts])
 
   const loadHiddenIds = async () => {
     const ids = await getHiddenPostIds()
@@ -372,8 +385,8 @@ export function CategoryPostsScreen({
               >
                 {/* Full-width banner thumbnail (Folo style: h-44 cover) */}
                 {thumbUri ? (
-                  <Image
-                    source={{ uri: thumbUri }}
+                  <CachedImage
+                    uri={thumbUri}
                     style={styles.bannerThumbnail}
                     resizeMode="cover"
                   />

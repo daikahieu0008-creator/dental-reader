@@ -11,6 +11,7 @@ import {
   View,
 } from "react-native"
 
+import { CachedImage } from "../components/CachedImage"
 import { MingcuteRightLineIcon } from "../icons/mingcute_right_line"
 import { StarCuteFiIcon } from "../icons/star_cute_fi"
 import { StarCuteReIcon } from "../icons/star_cute_re"
@@ -133,9 +134,14 @@ export function HomeScreen({ onSelectSite }: HomeScreenProps) {
         onPress={() => onSelectSite(item)}
         activeOpacity={0.7}
       >
-        {/* Left: White Squircle Avatar */}
+        {/* Left: White Squircle Avatar with real site logo */}
         <View style={styles.avatarContainer}>
-          <World2CuteReIcon width={24} height={24} color="#18181B" />
+          <CachedImage
+            uri={item.favicon}
+            style={styles.avatarImage}
+            resizeMode="cover"
+            fallback={<World2CuteReIcon width={24} height={24} color="#18181B" />}
+          />
         </View>
 
         {/* Middle: Site Info */}
@@ -397,6 +403,12 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFFFFF",
     justifyContent: "center",
     alignItems: "center",
+    overflow: "hidden",
+  },
+  avatarImage: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
   },
   infoContainer: {
     flex: 1,

@@ -12,7 +12,8 @@ export const DEFAULT_PRESET_SITES: SiteMetadata[] = [
     name: "Tự học RHM",
     url: "https://tuhocrhm.com",
     description: "Mỗi ngày học một chút!",
-    favicon: "https://tuhocrhm.com/favicon.ico",
+    favicon:
+      "https://i0.wp.com/tuhocrhm.com/wp-content/uploads/2023/01/cropped-cropped-cropped-cropped-logo-kinh-can-5.jpg?fit=512%2C512&ssl=1",
     type: "wordpress",
     createdAt: 1726915200000,
     categoryCount: 19,

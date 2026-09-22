@@ -126,6 +126,18 @@ export async function initDatabase(db?: any): Promise<void> {
   try {
     await activeDb.execAsync("ALTER TABLE sites ADD COLUMN starred_order INTEGER DEFAULT 0;")
   } catch {}
+
+  try {
+    await activeDb.execAsync(`
+      UPDATE sites 
+      SET favicon = 'https://i0.wp.com/tuhocrhm.com/wp-content/uploads/2023/01/cropped-cropped-cropped-cropped-logo-kinh-can-5.jpg?fit=512%2C512&ssl=1'
+      WHERE id = 'tuhocrhm_com' OR url LIKE '%tuhocrhm%';
+
+      UPDATE sites 
+      SET favicon = 'https://www.styleitaliano.org/wp-content/uploads/2021/05/cropped-ffff.jpg'
+      WHERE url LIKE '%styleitaliano%';
+    `)
+  } catch {}
 }
 
 export function toRoman(num: number): string {
@@ -193,32 +205,62 @@ export async function getSites(): Promise<SiteMetadata[]> {
     const rows = await db.getAllAsync(
       "SELECT * FROM sites ORDER BY CASE WHEN starred_order > 0 THEN 0 ELSE 1 END, starred_order ASC, created_at ASC"
     )
-    return rows.map((r: any) => ({
-      id: r.id,
-      name: r.name,
-      url: r.url,
-      description: r.description,
-      favicon: r.favicon,
-      type: r.type,
-      createdAt: r.created_at,
-      categoryCount: r.category_count,
-      postCount: r.post_count,
-      starredOrder: r.starred_order || 0,
-    }))
+    return rows.map((r: any) => {
+      let fav = r.favicon
+      if (r.id === "tuhocrhm_com" && (!fav || fav.includes("favicon.ico") || !fav.includes("cropped"))) {
+        fav =
+          "https://i0.wp.com/tuhocrhm.com/wp-content/uploads/2023/01/cropped-cropped-cropped-cropped-logo-kinh-can-5.jpg?fit=512%2C512&ssl=1"
+        db.runAsync("UPDATE sites SET favicon = ? WHERE id = ?", [fav, r.id]).catch(() => {})
+      } else if (
+        r.url &&
+        r.url.toLowerCase().includes("styleitaliano") &&
+        (!fav || fav.includes("favicon.ico") || !fav.includes("cropped"))
+      ) {
+        fav = "https://www.styleitaliano.org/wp-content/uploads/2021/05/cropped-ffff.jpg"
+        db.runAsync("UPDATE sites SET favicon = ? WHERE id = ?", [fav, r.id]).catch(() => {})
+      } else if (!fav || fav.includes("favicon.ico") || fav.endsWith(".ico")) {
+        try {
+          const domain = new URL(r.url).hostname
+          fav = `https://www.google.com/s2/favicons?domain=${domain}&sz=128`
+          db.runAsync("UPDATE sites SET favicon = ? WHERE id = ?", [fav, r.id]).catch(() => {})
+        } catch {}
+      }
+      return {
+        id: r.id,
+        name: r.name,
+        url: r.url,
+        description: r.description,
+        favicon: fav,
+        type: r.type,
+        createdAt: r.created_at,
+        categoryCount: r.category_count,
+        postCount: r.post_count,
+        starredOrder: r.starred_order || 0,
+      }
+    })
   } catch {
     const rows = await db.getAllAsync("SELECT * FROM sites ORDER BY created_at ASC")
-    return rows.map((r: any) => ({
-      id: r.id,
-      name: r.name,
-      url: r.url,
-      description: r.description,
-      favicon: r.favicon,
-      type: r.type,
-      createdAt: r.created_at,
-      categoryCount: r.category_count,
-      postCount: r.post_count,
-      starredOrder: 0,
-    }))
+    return rows.map((r: any) => {
+      let fav = r.favicon
+      if (r.id === "tuhocrhm_com") {
+        fav =
+          "https://i0.wp.com/tuhocrhm.com/wp-content/uploads/2023/01/cropped-cropped-cropped-cropped-logo-kinh-can-5.jpg?fit=512%2C512&ssl=1"
+      } else if (r.url && r.url.toLowerCase().includes("styleitaliano")) {
+        fav = "https://www.styleitaliano.org/wp-content/uploads/2021/05/cropped-ffff.jpg"
+      }
+      return {
+        id: r.id,
+        name: r.name,
+        url: r.url,
+        description: r.description,
+        favicon: fav,
+        type: r.type,
+        createdAt: r.created_at,
+        categoryCount: r.category_count,
+        postCount: r.post_count,
+        starredOrder: 0,
+      }
+    })
   }
 }
 

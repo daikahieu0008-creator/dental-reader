@@ -47,28 +47,32 @@ export async function fetchWordPressSiteInfo(
   baseUrl: string,
 ): Promise<{ name: string; description: string; favicon?: string }> {
   const normalized = normalizeUrl(baseUrl)
+  const domain = new URL(normalized).hostname
+  const googleFavicon = `https://www.google.com/s2/favicons?domain=${domain}&sz=128`
   try {
     const res = await fetch(`${normalized}/wp-json`, {
       headers: { Accept: "application/json" },
     })
     if (res.ok) {
       const data = await res.json()
-      const domain = new URL(normalized).hostname
+      let icon = data.site_icon_url
+      if (!icon || icon.endsWith(".ico") || icon.includes("favicon.ico")) {
+        icon = googleFavicon
+      }
       return {
         name: decodeHtmlEntities(data.name || domain),
         description: decodeHtmlEntities(data.description || ""),
-        favicon: data.site_icon_url || `${normalized}/favicon.ico`,
+        favicon: icon,
       }
     }
   } catch {
     // fallback
   }
 
-  const domain = new URL(normalized).hostname
   return {
     name: domain,
     description: "",
-    favicon: `${normalized}/favicon.ico`,
+    favicon: googleFavicon,
   }
 }
 

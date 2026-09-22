@@ -11,6 +11,7 @@ import {
 } from "react-native"
 
 import { ArrowLeftCuteReIcon } from "../icons/arrow_left_cute_re"
+import { CachedImage } from "../components/CachedImage"
 import { Delete2CuteReIcon } from "../icons/delete_2_cute_re"
 import { MingcuteRightLineIcon } from "../icons/mingcute_right_line"
 import { Settings1CuteReIcon } from "../icons/settings_1_cute_re"
@@ -174,7 +175,12 @@ export function SiteCategoriesScreen({
       <View style={styles.bannerCard}>
         <View style={styles.bannerTopRow}>
           <View style={styles.avatarContainer}>
-            <World2CuteReIcon width={26} height={26} color="#18181B" />
+            <CachedImage
+              uri={site.favicon}
+              style={styles.bannerAvatarImage}
+              resizeMode="cover"
+              fallback={<World2CuteReIcon width={26} height={26} color="#18181B" />}
+            />
           </View>
           <View style={styles.bannerInfo}>
             <Text style={styles.bannerSiteName} numberOfLines={1}>
@@ -300,6 +306,12 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFFFFF",
     justifyContent: "center",
     alignItems: "center",
+    overflow: "hidden",
+  },
+  bannerAvatarImage: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
   },
   bannerInfo: {
     flex: 1,

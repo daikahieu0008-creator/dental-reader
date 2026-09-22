@@ -55,31 +55,13 @@ export async function readArticleHtml(filePathOrUri: string): Promise<string> {
 
 export async function cacheThumbnailOffline(
   imageUrl: string,
-  postId: string | number,
+  _postId?: string | number,
 ): Promise<string> {
   if (!imageUrl || !imageUrl.startsWith("http")) return imageUrl
-
-  const safeId = String(postId).replace(/[^a-zA-Z0-9_-]/g, "_")
-  const ext = imageUrl.split(".").pop()?.split("?")[0] || "jpg"
-  const fileName = `thumb_${safeId}.${ext}`
-
   try {
-    const FileSystem = await import("expo-file-system")
-    const dirUri = `${FileSystem.documentDirectory}thumbnails/`
-
-    const dirInfo = await FileSystem.getInfoAsync(dirUri)
-    if (!dirInfo.exists) {
-      await FileSystem.makeDirectoryAsync(dirUri, { intermediates: true })
-    }
-
-    const fileUri = `${dirUri}${fileName}`
-    const fileInfo = await FileSystem.getInfoAsync(fileUri)
-    if (fileInfo.exists) {
-      return fileUri
-    }
-
-    const downloadRes = await FileSystem.downloadAsync(imageUrl, fileUri)
-    return downloadRes.uri
+    const { getOrDownloadLocalImage } = await import("../components/CachedImage")
+    const local = await getOrDownloadLocalImage(imageUrl)
+    return local || imageUrl
   } catch {
     return imageUrl
   }
