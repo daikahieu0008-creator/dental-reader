@@ -15,7 +15,7 @@ import {
   savePosts,
   updateCategoryState,
 } from "../../storage/database.ts"
-import { saveArticleHtml } from "../../storage/file-storage.ts"
+import { cacheThumbnailOffline, saveArticleHtml } from "../../storage/file-storage.ts"
 import type { SitePost } from "./types.ts"
 import { fetchWordPressPostsByCategory } from "./wordpress.ts"
 
@@ -75,12 +75,20 @@ export async function loadCategoryPostsInitial({
   )
   const firstPage = result.posts
 
-  // Save HTML bodies to disk and prepare records
+  // Save HTML bodies to disk and cache thumbnails locally
   for (const post of firstPage) {
     if (post.content) {
       const path = await saveArticleHtml(post.id, post.content)
       ;(post as any).htmlPath = path
       post.isDownloaded = true
+    }
+    const rawThumb = post.thumbnail || post.featuredMedia
+    if (rawThumb && rawThumb.startsWith("http")) {
+      try {
+        const localThumb = await cacheThumbnailOffline(rawThumb, post.id)
+        post.thumbnail = localThumb
+        post.featuredMedia = localThumb
+      } catch {}
     }
   }
 
@@ -202,6 +210,14 @@ export async function batchDownloadCategoryPosts({
           const path = await saveArticleHtml(p.id, p.content)
           ;(p as any).htmlPath = path
           p.isDownloaded = true
+        }
+        const rawThumb = p.thumbnail || p.featuredMedia
+        if (rawThumb && rawThumb.startsWith("http")) {
+          try {
+            const localThumb = await cacheThumbnailOffline(rawThumb, p.id)
+            p.thumbnail = localThumb
+            p.featuredMedia = localThumb
+          } catch {}
         }
         newlyFetched.push(p)
       }

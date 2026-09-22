@@ -9,6 +9,7 @@ export interface SiteMetadata {
   createdAt: number
   categoryCount?: number
   postCount?: number
+  starredOrder?: number
 }
 
 export interface SiteCategory {
@@ -26,14 +27,21 @@ export interface SitePost {
   categoryId?: string | number
   categoryName?: string
   title: string
-  link: string
-  date: string
+  slug?: string
+  url?: string
+  link?: string
+  date?: string
+  publishedAt?: string
   excerpt: string
   content: string
+  author?: string
+  thumbnail?: string
   featuredMedia?: string
   isDownloaded?: boolean
   isHidden?: boolean
   geminiSummary?: string
+  modelUsed?: string
+  summaryConsistent?: boolean
 }
 
 export interface SiteDetectionResult {

@@ -2,10 +2,13 @@ import React, { useEffect, useState } from "react"
 import { StatusBar } from "expo-status-bar"
 import { SafeAreaView, StyleSheet, View } from "react-native"
 
+import { BottomNavBar, type TabKey } from "./src/components/BottomNavBar"
 import { CategoryPostsScreen } from "./src/screens/CategoryPostsScreen"
+import { ChatAIScreen } from "./src/screens/ChatAIScreen"
 import { GeminiSettingsScreen } from "./src/screens/GeminiSettingsScreen"
 import { HomeScreen } from "./src/screens/HomeScreen"
 import { PostDetailScreen } from "./src/screens/PostDetailScreen"
+import { SiteCategoriesScreen } from "./src/screens/SiteCategoriesScreen"
 import { SitePromptSettingsScreen } from "./src/screens/SitePromptSettingsScreen"
 import { TelegramLibraryScreen } from "./src/screens/TelegramLibraryScreen"
 import type { SiteCategory, SiteMetadata, SitePost } from "./src/services/site-scraper/types"
@@ -13,18 +16,18 @@ import { initDatabase } from "./src/storage/database"
 import { colors } from "./src/theme/colors"
 
 type ScreenType =
-  | "home"
+  | "tab_root"
+  | "site_categories"
   | "category_posts"
   | "post_detail"
-  | "gemini_settings"
-  | "telegram_library"
   | "site_prompt_settings"
 
 export default function App() {
   const theme = colors.dark
 
-  const [currentScreen, setCurrentScreen] = useState<ScreenType>("home")
-  const [previousScreenForPrompt, setPreviousScreenForPrompt] = useState<ScreenType>("category_posts")
+  const [activeTab, setActiveTab] = useState<TabKey>("sites")
+  const [currentScreen, setCurrentScreen] = useState<ScreenType>("tab_root")
+  const [previousScreenForPrompt, setPreviousScreenForPrompt] = useState<ScreenType>("site_categories")
   const [selectedSite, setSelectedSite] = useState<SiteMetadata | null>(null)
   const [selectedCategory, setSelectedCategory] = useState<SiteCategory | null>(null)
   const [selectedPost, setSelectedPost] = useState<SitePost | null>(null)
@@ -34,6 +37,11 @@ export default function App() {
       console.error("Database init error:", err)
     })
   }, [])
+
+  const handleSelectSite = (site: SiteMetadata) => {
+    setSelectedSite(site)
+    setCurrentScreen("site_categories")
+  }
 
   const handleSelectCategory = (category: SiteCategory, site: SiteMetadata) => {
     setSelectedCategory(category)
@@ -52,55 +60,83 @@ export default function App() {
     setCurrentScreen("site_prompt_settings")
   }
 
+  const handleSelectTab = (tab: TabKey) => {
+    setActiveTab(tab)
+    setCurrentScreen("tab_root")
+  }
+
+  const isStackScreen = currentScreen !== "tab_root"
+
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
       <StatusBar style="light" />
 
-      {currentScreen === "home" && (
-        <HomeScreen
-          onSelectCategory={handleSelectCategory}
-          onOpenGeminiSettings={() => setCurrentScreen("gemini_settings")}
-          onOpenTelegramLibrary={() => setCurrentScreen("telegram_library")}
-        />
-      )}
+      <View style={styles.mainContent}>
+        {/* TAB ROOT SCREENS */}
+        {!isStackScreen && activeTab === "sites" && (
+          <HomeScreen onSelectSite={handleSelectSite} />
+        )}
 
-      {currentScreen === "category_posts" && selectedCategory && selectedSite && (
-        <CategoryPostsScreen
-          siteUrl={selectedSite.url}
-          siteId={selectedSite.id}
-          site={selectedSite}
-          categoryId={String(selectedCategory.id)}
-          categoryName={selectedCategory.name}
-          categoryCount={selectedCategory.count}
-          onBack={() => setCurrentScreen("home")}
-          onSelectPost={handleSelectPost}
-          onOpenPromptSettings={(site) => handleOpenPromptSettings(site, "category_posts")}
-        />
-      )}
+        {!isStackScreen && activeTab === "chat" && <ChatAIScreen />}
 
-      {currentScreen === "post_detail" && selectedPost && (
-        <PostDetailScreen
-          post={selectedPost}
-          site={selectedSite}
-          siteName={selectedSite?.name}
-          onBack={() => setCurrentScreen("category_posts")}
-          onOpenPromptSettings={(site) => handleOpenPromptSettings(site, "post_detail")}
-        />
-      )}
+        {!isStackScreen && activeTab === "pdf" && <TelegramLibraryScreen />}
 
-      {currentScreen === "site_prompt_settings" && selectedSite && (
-        <SitePromptSettingsScreen
-          site={selectedSite}
-          onBack={() => setCurrentScreen(previousScreenForPrompt || "category_posts")}
-        />
-      )}
+        {!isStackScreen && activeTab === "settings" && <GeminiSettingsScreen />}
 
-      {currentScreen === "gemini_settings" && (
-        <GeminiSettingsScreen onBack={() => setCurrentScreen("home")} />
-      )}
+        {/* STACK CHILD SCREENS */}
+        {currentScreen === "site_categories" && selectedSite && (
+          <SiteCategoriesScreen
+            site={selectedSite}
+            onBack={() => setCurrentScreen("tab_root")}
+            onSelectCategory={handleSelectCategory}
+            onOpenPromptSettings={(site) =>
+              handleOpenPromptSettings(site, "site_categories")
+            }
+            onSiteDeleted={() => setCurrentScreen("tab_root")}
+          />
+        )}
 
-      {currentScreen === "telegram_library" && (
-        <TelegramLibraryScreen onBack={() => setCurrentScreen("home")} />
+        {currentScreen === "category_posts" && selectedCategory && selectedSite && (
+          <CategoryPostsScreen
+            siteUrl={selectedSite.url}
+            siteId={selectedSite.id}
+            site={selectedSite}
+            categoryId={String(selectedCategory.id)}
+            categoryName={selectedCategory.name}
+            categoryCount={selectedCategory.count}
+            onBack={() => setCurrentScreen("site_categories")}
+            onSelectPost={handleSelectPost}
+            onOpenPromptSettings={(site) =>
+              handleOpenPromptSettings(site, "category_posts")
+            }
+          />
+        )}
+
+        {currentScreen === "post_detail" && selectedPost && (
+          <PostDetailScreen
+            post={selectedPost}
+            site={selectedSite}
+            siteName={selectedSite?.name}
+            onBack={() => setCurrentScreen("category_posts")}
+            onOpenPromptSettings={(site) =>
+              handleOpenPromptSettings(site, "post_detail")
+            }
+          />
+        )}
+
+        {currentScreen === "site_prompt_settings" && selectedSite && (
+          <SitePromptSettingsScreen
+            site={selectedSite}
+            onBack={() =>
+              setCurrentScreen(previousScreenForPrompt || "site_categories")
+            }
+          />
+        )}
+      </View>
+
+      {/* 4-Tab Bottom Navigation Bar shown on tab root */}
+      {!isStackScreen && (
+        <BottomNavBar activeTab={activeTab} onSelectTab={handleSelectTab} />
       )}
     </SafeAreaView>
   )
@@ -108,6 +144,9 @@ export default function App() {
 
 const styles = StyleSheet.create({
   container: {
+    flex: 1,
+  },
+  mainContent: {
     flex: 1,
   },
 })

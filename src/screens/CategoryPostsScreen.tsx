@@ -422,32 +422,38 @@ export function CategoryPostsScreen({
                     </Text>
                   ) : null}
 
-                  {/* Bottom info row: Date & Offline badge */}
-                  <View
-                    style={[
-                      styles.bottomMetaRow,
-                      { borderTopColor: "rgba(255, 255, 255, 0.06)" },
-                    ]}
-                  >
-                    <Text style={[styles.dateText, { color: theme.textMuted }]}>
-                      {item.publishedAt
-                        ? item.publishedAt.slice(0, 10)
-                        : item.date
-                        ? item.date.slice(0, 10)
-                        : ""}
-                    </Text>
+                    {/* Bottom info row: Date & Status Badges */}
+                    <View
+                      style={[
+                        styles.bottomMetaRow,
+                        { borderTopColor: "rgba(255, 255, 255, 0.06)" },
+                      ]}
+                    >
+                      <Text style={[styles.dateText, { color: theme.textMuted }]}>
+                        {item.publishedAt
+                          ? item.publishedAt.slice(0, 10)
+                          : item.date
+                          ? item.date.slice(0, 10)
+                          : ""}
+                      </Text>
 
-                    {item.isDownloaded ? (
-                      <View style={[styles.offlineBadge, { backgroundColor: theme.successBg }]}>
-                        <CheckFilledIcon width={11} height={11} color="#22C55E" />
-                        <Text style={[styles.offlineText, { color: theme.success }]}>
-                          Offline
-                        </Text>
+                      <View style={styles.rightBadgesRow}>
+                        {item.geminiSummary ? (
+                          <View style={styles.summaryBadge}>
+                            <Text style={styles.summaryBadgeText}>✦ Đã tóm tắt</Text>
+                          </View>
+                        ) : null}
+
+                        {item.isDownloaded ? (
+                          <View style={styles.offlineBadge}>
+                            <CheckFilledIcon width={11} height={11} color="#22C55E" />
+                            <Text style={styles.offlineText}>Offline</Text>
+                          </View>
+                        ) : null}
                       </View>
-                    ) : null}
+                    </View>
                   </View>
-                </View>
-              </Pressable>
+                </Pressable>
             )
           }}
         />
@@ -571,17 +577,35 @@ const styles = StyleSheet.create({
   dateText: {
     fontSize: 12,
   },
+  rightBadgesRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  summaryBadge: {
+    backgroundColor: "rgba(255, 92, 0, 0.15)",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  summaryBadgeText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#FF5C00",
+  },
   offlineBadge: {
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
+    backgroundColor: "rgba(34, 197, 94, 0.15)",
     paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 12,
+    paddingVertical: 3,
+    borderRadius: 8,
   },
   offlineText: {
-    fontSize: 10,
-    fontWeight: "600",
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#22C55E",
   },
   footerContainer: {
     marginTop: 16,

@@ -122,6 +122,29 @@ export async function initDatabase(db?: any): Promise<void> {
   try {
     await activeDb.execAsync("ALTER TABLE sites ADD COLUMN custom_prompt TEXT;")
   } catch {}
+
+  try {
+    await activeDb.execAsync("ALTER TABLE sites ADD COLUMN starred_order INTEGER DEFAULT 0;")
+  } catch {}
+}
+
+export function toRoman(num: number): string {
+  if (num <= 0) return ""
+  const romanMap: [number, string][] = [
+    [10, "X"],
+    [9, "IX"],
+    [5, "V"],
+    [4, "IV"],
+    [1, "I"],
+  ]
+  let result = ""
+  for (const [val, roman] of romanMap) {
+    while (num >= val) {
+      result += roman
+      num -= val
+    }
+  }
+  return result
 }
 
 // ---------------- Site Custom Prompt Methods ----------------
@@ -154,20 +177,49 @@ export async function saveSiteCustomPrompt(siteId: string, prompt: string): Prom
 
 export async function getSites(): Promise<SiteMetadata[]> {
   const db = await getDb()
-  if (!db) return memSites
+  if (!db) {
+    return [...memSites].sort((a, b) => {
+      const aStarred = (a.starredOrder || 0) > 0 ? 0 : 1
+      const bStarred = (b.starredOrder || 0) > 0 ? 0 : 1
+      if (aStarred !== bStarred) return aStarred - bStarred
+      if ((a.starredOrder || 0) !== (b.starredOrder || 0)) {
+        return (a.starredOrder || 0) - (b.starredOrder || 0)
+      }
+      return a.createdAt - b.createdAt
+    })
+  }
 
-  const rows = await db.getAllAsync("SELECT * FROM sites ORDER BY created_at ASC")
-  return rows.map((r: any) => ({
-    id: r.id,
-    name: r.name,
-    url: r.url,
-    description: r.description,
-    favicon: r.favicon,
-    type: r.type,
-    createdAt: r.created_at,
-    categoryCount: r.category_count,
-    postCount: r.post_count,
-  }))
+  try {
+    const rows = await db.getAllAsync(
+      "SELECT * FROM sites ORDER BY CASE WHEN starred_order > 0 THEN 0 ELSE 1 END, starred_order ASC, created_at ASC"
+    )
+    return rows.map((r: any) => ({
+      id: r.id,
+      name: r.name,
+      url: r.url,
+      description: r.description,
+      favicon: r.favicon,
+      type: r.type,
+      createdAt: r.created_at,
+      categoryCount: r.category_count,
+      postCount: r.post_count,
+      starredOrder: r.starred_order || 0,
+    }))
+  } catch {
+    const rows = await db.getAllAsync("SELECT * FROM sites ORDER BY created_at ASC")
+    return rows.map((r: any) => ({
+      id: r.id,
+      name: r.name,
+      url: r.url,
+      description: r.description,
+      favicon: r.favicon,
+      type: r.type,
+      createdAt: r.created_at,
+      categoryCount: r.category_count,
+      postCount: r.post_count,
+      starredOrder: 0,
+    }))
+  }
 }
 
 export async function saveSite(site: SiteMetadata): Promise<void> {
@@ -179,21 +231,101 @@ export async function saveSite(site: SiteMetadata): Promise<void> {
     return
   }
 
-  await db.runAsync(
-    `INSERT OR REPLACE INTO sites (id, name, url, description, favicon, type, created_at, category_count, post_count)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      site.id,
-      site.name,
-      site.url,
-      site.description || "",
-      site.favicon || "",
-      site.type,
-      site.createdAt,
-      site.categoryCount || 0,
-      site.postCount || 0,
-    ],
-  )
+  try {
+    await db.runAsync(
+      `INSERT OR REPLACE INTO sites (id, name, url, description, favicon, type, created_at, category_count, post_count, starred_order)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE((SELECT starred_order FROM sites WHERE id = ?), ?))`,
+      [
+        site.id,
+        site.name,
+        site.url,
+        site.description || "",
+        site.favicon || "",
+        site.type,
+        site.createdAt,
+        site.categoryCount || 0,
+        site.postCount || 0,
+        site.id,
+        site.starredOrder || 0,
+      ],
+    )
+  } catch {
+    await db.runAsync(
+      `INSERT OR REPLACE INTO sites (id, name, url, description, favicon, type, created_at, category_count, post_count)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        site.id,
+        site.name,
+        site.url,
+        site.description || "",
+        site.favicon || "",
+        site.type,
+        site.createdAt,
+        site.categoryCount || 0,
+        site.postCount || 0,
+      ],
+    )
+  }
+}
+
+export async function toggleSiteStarred(siteId: string): Promise<number> {
+  const db = await getDb()
+  if (!db) {
+    const site = memSites.find((s) => s.id === siteId)
+    if (!site) return 0
+    if ((site.starredOrder || 0) > 0) {
+      site.starredOrder = 0
+    } else {
+      const max = Math.max(0, ...memSites.map((s) => s.starredOrder || 0))
+      site.starredOrder = max + 1
+    }
+    return site.starredOrder
+  }
+
+  try {
+    const row: any = await db.getFirstAsync("SELECT starred_order FROM sites WHERE id = ?", [siteId])
+    const currentOrder = row?.starred_order || 0
+
+    if (currentOrder > 0) {
+      // Unstar
+      await db.runAsync("UPDATE sites SET starred_order = 0 WHERE id = ?", [siteId])
+      // Re-normalize existing starred sites: 1, 2, 3...
+      const starredRows: any[] = await db.getAllAsync(
+        "SELECT id FROM sites WHERE starred_order > 0 ORDER BY starred_order ASC"
+      )
+      for (let i = 0; i < starredRows.length; i++) {
+        await db.runAsync("UPDATE sites SET starred_order = ? WHERE id = ?", [i + 1, starredRows[i].id])
+      }
+      return 0
+    } else {
+      // Star with next order number
+      const maxRow: any = await db.getFirstAsync("SELECT MAX(starred_order) as max_val FROM sites")
+      const nextOrder = (maxRow?.max_val || 0) + 1
+      await db.runAsync("UPDATE sites SET starred_order = ? WHERE id = ?", [nextOrder, siteId])
+      return nextOrder
+    }
+  } catch (err) {
+    console.error("Error toggling site starred:", err)
+    return 0
+  }
+}
+
+export async function deleteSite(siteId: string): Promise<void> {
+  const db = await getDb()
+  if (!db) {
+    const idx = memSites.findIndex((s) => s.id === siteId)
+    if (idx >= 0) memSites.splice(idx, 1)
+    memCategories.delete(siteId)
+    return
+  }
+
+  try {
+    await db.runAsync("DELETE FROM sites WHERE id = ?", [siteId])
+    await db.runAsync("DELETE FROM categories WHERE site_id = ?", [siteId])
+    await db.runAsync("DELETE FROM posts WHERE site_id = ?", [siteId])
+  } catch (err) {
+    console.error("Error deleting site:", err)
+  }
 }
 
 // ---------------- Category Methods ----------------
@@ -339,7 +471,7 @@ export async function savePosts(posts: SitePost[]): Promise<void> {
   const db = await getDb()
   if (!db) {
     for (const p of posts) {
-      memPosts.set(p.id, p)
+      memPosts.set(String(p.id), p)
     }
     return
   }

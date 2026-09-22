@@ -30,7 +30,7 @@ export async function saveArticleHtml(
     return fileUri
   } catch {
     // Fallback in test/node environments
-    memoryHtmlCache.set(postId, htmlContent)
+    memoryHtmlCache.set(String(postId), htmlContent)
     return `memory://${postId}`
   }
 }
@@ -52,3 +52,36 @@ export async function readArticleHtml(filePathOrUri: string): Promise<string> {
     return memoryHtmlCache.get(filePathOrUri) || ""
   }
 }
+
+export async function cacheThumbnailOffline(
+  imageUrl: string,
+  postId: string | number,
+): Promise<string> {
+  if (!imageUrl || !imageUrl.startsWith("http")) return imageUrl
+
+  const safeId = String(postId).replace(/[^a-zA-Z0-9_-]/g, "_")
+  const ext = imageUrl.split(".").pop()?.split("?")[0] || "jpg"
+  const fileName = `thumb_${safeId}.${ext}`
+
+  try {
+    const FileSystem = await import("expo-file-system")
+    const dirUri = `${FileSystem.documentDirectory}thumbnails/`
+
+    const dirInfo = await FileSystem.getInfoAsync(dirUri)
+    if (!dirInfo.exists) {
+      await FileSystem.makeDirectoryAsync(dirUri, { intermediates: true })
+    }
+
+    const fileUri = `${dirUri}${fileName}`
+    const fileInfo = await FileSystem.getInfoAsync(fileUri)
+    if (fileInfo.exists) {
+      return fileUri
+    }
+
+    const downloadRes = await FileSystem.downloadAsync(imageUrl, fileUri)
+    return downloadRes.uri
+  } catch {
+    return imageUrl
+  }
+}
+

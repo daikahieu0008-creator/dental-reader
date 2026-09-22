@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   FlatList,
   Modal,
+  RefreshControl,
   StyleSheet,
   Text,
   TextInput,
@@ -10,68 +11,71 @@ import {
   View,
 } from "react-native"
 
+import { MingcuteRightLineIcon } from "../icons/mingcute_right_line"
+import { StarCuteFiIcon } from "../icons/star_cute_fi"
+import { StarCuteReIcon } from "../icons/star_cute_re"
+import { World2CuteReIcon } from "../icons/world_2_cute_re"
+import { fetchWordPressSiteInfo } from "../services/site-scraper/wordpress"
+import type { SiteMetadata } from "../services/site-scraper/types"
 import {
-  fetchWordPressCategories,
-  fetchWordPressSiteInfo,
-} from "../services/site-scraper/wordpress"
-import type { SiteCategory, SiteMetadata } from "../services/site-scraper/types"
-import {
-  getCategories,
+  deleteSite,
   getSites,
-  saveCategories,
   saveSite,
+  toRoman,
+  toggleSiteStarred,
 } from "../storage/database"
 import { DEFAULT_PRESET_SITES } from "../storage/index"
 import { colors } from "../theme/colors"
 
 interface HomeScreenProps {
-  onSelectCategory: (category: SiteCategory, site: SiteMetadata) => void
-  onOpenGeminiSettings: () => void
-  onOpenTelegramLibrary: () => void
+  onSelectSite: (site: SiteMetadata) => void
 }
 
-export function HomeScreen({
-  onSelectCategory,
-  onOpenGeminiSettings,
-  onOpenTelegramLibrary,
-}: HomeScreenProps) {
+export function HomeScreen({ onSelectSite }: HomeScreenProps) {
   const theme = colors.dark
 
-  const [activeSite, setActiveSite] = useState<SiteMetadata>(DEFAULT_PRESET_SITES[0])
-  const [categories, setCategories] = useState<SiteCategory[]>([])
-  const [isLoadingCategories, setIsLoadingCategories] = useState(true)
+  const [sites, setSites] = useState<SiteMetadata[]>([])
+  const [searchQuery, setSearchQuery] = useState("")
+  const [isLoading, setIsLoading] = useState(true)
+  const [isRefreshing, setIsRefreshing] = useState(false)
 
-  // Add Site Modal
-  const [isAddSiteModalOpen, setIsAddSiteModalOpen] = useState(false)
+  // Add Site Modal State
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false)
   const [newSiteUrl, setNewSiteUrl] = useState("")
   const [isAddingSite, setIsAddingSite] = useState(false)
   const [addSiteError, setAddSiteError] = useState<string | null>(null)
 
   useEffect(() => {
-    loadCategoriesForSite(activeSite)
-  }, [activeSite.id])
+    loadSites()
+  }, [])
 
-  const loadCategoriesForSite = async (site: SiteMetadata) => {
-    setIsLoadingCategories(true)
+  const loadSites = async () => {
     try {
-      // 1. Try loading from local SQLite database first
-      const localCats = await getCategories(site.id)
-      if (localCats.length > 0) {
-        setCategories(localCats)
-        setIsLoadingCategories(false)
-        return
+      let localSites = await getSites()
+      if (localSites.length === 0) {
+        // Seed initial preset site
+        for (const preset of DEFAULT_PRESET_SITES) {
+          await saveSite(preset)
+        }
+        localSites = await getSites()
       }
-
-      // 2. If not in DB, fetch from WordPress REST API
-      const remoteCats = await fetchWordPressCategories(site.id, site.url)
-      setCategories(remoteCats)
-      await saveCategories(site.id, remoteCats)
-      await saveSite(site)
+      setSites(localSites)
     } catch (err) {
-      console.error("Error loading categories:", err)
+      console.error("Error loading sites:", err)
     } finally {
-      setIsLoadingCategories(false)
+      setIsLoading(false)
+      setIsRefreshing(false)
     }
+  }
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true)
+    await loadSites()
+  }
+
+  const handleToggleStar = async (siteId: string) => {
+    await toggleSiteStarred(siteId)
+    await loadSites()
   }
 
   const handleAddSite = async () => {
@@ -80,206 +84,223 @@ export function HomeScreen({
     setAddSiteError(null)
 
     try {
-      const info = await fetchWordPressSiteInfo(newSiteUrl.trim())
+      const formattedUrl = newSiteUrl.trim().startsWith("http")
+        ? newSiteUrl.trim()
+        : `https://${newSiteUrl.trim()}`
+
+      const info = await fetchWordPressSiteInfo(formattedUrl)
       const newSite: SiteMetadata = {
         id: `site_${Date.now()}`,
-        name: info.name,
-        url: newSiteUrl.trim(),
-        description: info.description,
+        name: info.name || formattedUrl.replace(/^https?:\/\//, "").replace(/\/.*$/, ""),
+        url: formattedUrl,
+        description: info.description || "",
         favicon: info.favicon,
         type: "wordpress",
         createdAt: Date.now(),
+        categoryCount: 0,
+        postCount: 0,
+        starredOrder: 0,
       }
 
       await saveSite(newSite)
-      setActiveSite(newSite)
-      setIsAddSiteModalOpen(false)
+      await loadSites()
+      setIsAddModalOpen(false)
       setNewSiteUrl("")
     } catch (err: any) {
-      setAddSiteError(err.message || "Không thể phát hiện trang WordPress hoặc RSS.")
+      setAddSiteError(err.message || "Không thể kết nối đến trang WordPress hoặc RSS.")
     } finally {
       setIsAddingSite(false)
     }
   }
 
-  const renderCategoryItem = ({ item }: { item: SiteCategory }) => (
-    <TouchableOpacity
-      style={[
-        styles.catCard,
-        {
-          backgroundColor: theme.card,
-          borderColor: theme.cardBorder,
-        },
-      ]}
-      onPress={() => onSelectCategory(item, activeSite)}
-      activeOpacity={0.7}
-    >
-      <View style={styles.catLeftRow}>
-        <View style={[styles.catIconBox, { backgroundColor: theme.accentBg }]}>
-          <Text style={{ fontSize: 18 }}>🦷</Text>
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={[styles.catName, { color: theme.text }]} numberOfLines={1}>
-            {item.name}
-          </Text>
-          <Text style={[styles.catSub, { color: theme.textMuted }]}>
-            Chuyên khoa Răng Hàm Mặt
-          </Text>
-        </View>
-      </View>
+  const filteredSites = sites.filter((site) => {
+    if (!searchQuery.trim()) return true
+    const q = searchQuery.toLowerCase()
+    return (
+      site.name.toLowerCase().includes(q) ||
+      site.url.toLowerCase().includes(q) ||
+      (site.description && site.description.toLowerCase().includes(q))
+    )
+  })
 
-      <View style={[styles.countBadge, { backgroundColor: theme.secondaryCard }]}>
-        <Text style={[styles.countText, { color: theme.accentLight }]}>
-          {item.count || 0} bài
-        </Text>
-        <Text style={{ color: theme.textMuted, fontSize: 12 }}>›</Text>
-      </View>
-    </TouchableOpacity>
-  )
+  const renderSiteCard = ({ item }: { item: SiteMetadata }) => {
+    const isStarred = (item.starredOrder || 0) > 0
+    const romanNumeral = isStarred ? toRoman(item.starredOrder || 0) : ""
+
+    return (
+      <TouchableOpacity
+        style={styles.cardContainer}
+        onPress={() => onSelectSite(item)}
+        activeOpacity={0.7}
+      >
+        {/* Left: White Squircle Avatar */}
+        <View style={styles.avatarContainer}>
+          <World2CuteReIcon width={24} height={24} color="#18181B" />
+        </View>
+
+        {/* Middle: Site Info */}
+        <View style={styles.infoContainer}>
+          <View style={styles.titleRow}>
+            <Text style={styles.siteTitle} numberOfLines={1}>
+              {item.name}
+            </Text>
+            <View style={styles.typeBadge}>
+              <Text style={styles.typeBadgeText}>
+                {item.type === "wordpress" ? "WP" : "RSS"}
+              </Text>
+            </View>
+          </View>
+          <Text style={styles.subtitleText}>
+            {item.categoryCount || 0} danh mục • {item.postCount || 0} bài
+          </Text>
+        </View>
+
+        {/* Right: Star & Chevron */}
+        <View style={styles.rightActionsRow}>
+          <TouchableOpacity
+            style={styles.starButton}
+            onPress={() => handleToggleStar(item.id)}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 6 }}
+          >
+            {isStarred ? (
+              <View style={styles.starredBadgeBox}>
+                <StarCuteFiIcon width={22} height={22} color="#F59E0B" />
+                {romanNumeral ? (
+                  <Text style={styles.romanNumeralText}>{romanNumeral}</Text>
+                ) : null}
+              </View>
+            ) : (
+              <StarCuteReIcon width={22} height={22} color="#52525B" />
+            )}
+          </TouchableOpacity>
+
+          <MingcuteRightLineIcon width={18} height={18} color="#71717A" />
+        </View>
+      </TouchableOpacity>
+    )
+  }
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
-      {/* Top Header */}
-      <View style={[styles.header, { borderBottomColor: theme.separator }]}>
-        <View style={styles.headerTitleRow}>
-          <View style={[styles.logoIconBox, { backgroundColor: theme.accentBg }]}>
-            <Text style={{ fontSize: 20 }}>🩺</Text>
-          </View>
-          <View>
-            <Text style={[styles.appName, { color: theme.text }]}>DentalAI Reader</Text>
-            <Text style={[styles.appSub, { color: theme.accentLight }]}>
-              Trình đọc & Tóm tắt Nha khoa Ngoại tuyến
-            </Text>
-          </View>
+      {/* Top Search & Add Header */}
+      <View style={styles.headerContainer}>
+        <View style={styles.searchBar}>
+          <Text style={styles.searchIcon}>🔍</Text>
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Tìm kiếm trang web..."
+            placeholderTextColor="#71717A"
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            clearButtonMode="while-editing"
+          />
+          {searchQuery ? (
+            <TouchableOpacity onPress={() => setSearchQuery("")}>
+              <Text style={{ color: "#71717A", fontSize: 16 }}>✕</Text>
+            </TouchableOpacity>
+          ) : null}
         </View>
-      </View>
-
-      {/* Quick Navigation Cards */}
-      <View style={styles.quickNavRow}>
-        <TouchableOpacity
-          style={[styles.quickCard, { backgroundColor: theme.card, borderColor: theme.aiPurpleBorder }]}
-          onPress={onOpenGeminiSettings}
-        >
-          <Text style={{ fontSize: 20, marginBottom: 4 }}>⚡</Text>
-          <Text style={[styles.quickCardTitle, { color: theme.text }]}>Cài Đặt Gemini</Text>
-          <Text style={[styles.quickCardDesc, { color: theme.aiPurpleLight }]}>
-            Key & Thứ tự Model
-          </Text>
-        </TouchableOpacity>
 
         <TouchableOpacity
-          style={[styles.quickCard, { backgroundColor: theme.card, borderColor: theme.cardBorder }]}
-          onPress={onOpenTelegramLibrary}
+          style={styles.addButton}
+          onPress={() => setIsAddModalOpen(true)}
+          activeOpacity={0.7}
         >
-          <Text style={{ fontSize: 20, marginBottom: 4 }}>📚</Text>
-          <Text style={[styles.quickCardTitle, { color: theme.text }]}>Thư Viện PDF</Text>
-          <Text style={[styles.quickCardDesc, { color: theme.accentLight }]}>
-            Sách Nha Khoa Offline
-          </Text>
+          <Text style={styles.addButtonIcon}>＋</Text>
         </TouchableOpacity>
       </View>
 
-      {/* Active Site Banner */}
-      <View style={[styles.siteBanner, { backgroundColor: theme.card, borderColor: theme.cardBorder }]}>
-        <View style={styles.siteInfoRow}>
-          <View style={{ flex: 1 }}>
-            <View style={styles.siteTagRow}>
-              <Text style={[styles.siteName, { color: theme.text }]}>{activeSite.name}</Text>
-              <View style={[styles.siteTypeBadge, { backgroundColor: theme.successBg }]}>
-                <Text style={[styles.siteTypeText, { color: theme.success }]}>WordPress</Text>
-              </View>
-            </View>
-            <Text style={[styles.siteUrl, { color: theme.textMuted }]}>{activeSite.url}</Text>
-          </View>
-
-          <TouchableOpacity
-            style={[styles.addSiteIconBtn, { backgroundColor: theme.secondaryCard }]}
-            onPress={() => setIsAddSiteModalOpen(true)}
-          >
-            <Text style={{ fontSize: 16 }}>＋</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      {/* Category Section Header */}
+      {/* Section Subtitle */}
       <View style={styles.sectionHeader}>
-        <Text style={[styles.sectionTitle, { color: theme.text }]}>
-          Chuyên Mục Nha Khoa ({categories.length})
-        </Text>
-        <Text style={[styles.sectionHint, { color: theme.textMuted }]}>
-          Nhấn để tải & đọc bài viết
-        </Text>
+        <Text style={styles.sectionTitle}>TRANG WEB ĐÃ THEO DÕI</Text>
+        <Text style={styles.sectionCount}>{filteredSites.length} trang</Text>
       </View>
 
-      {/* Category List */}
-      {isLoadingCategories ? (
+      {/* Site List */}
+      {isLoading ? (
         <View style={styles.centerContainer}>
-          <ActivityIndicator size="large" color={theme.accent} />
-          <Text style={{ color: theme.textMuted, marginTop: 10 }}>Đang nạp 19 danh mục...</Text>
+          <ActivityIndicator size="large" color="#FF5C00" />
+          <Text style={styles.loadingText}>Đang tải trang web...</Text>
         </View>
       ) : (
         <FlatList
-          data={categories}
-          keyExtractor={(item) => String(item.id)}
-          renderItem={renderCategoryItem}
+          data={filteredSites}
+          keyExtractor={(item) => item.id}
+          renderItem={renderSiteCard}
           contentContainerStyle={styles.listContent}
+          refreshControl={
+            <RefreshControl
+              refreshing={isRefreshing}
+              onRefresh={handleRefresh}
+              tintColor="#FF5C00"
+            />
+          }
+          ListEmptyComponent={
+            <View style={styles.emptyContainer}>
+              <Text style={{ fontSize: 36, marginBottom: 8 }}>🌐</Text>
+              <Text style={styles.emptyTitle}>Chưa có trang web nào</Text>
+              <Text style={styles.emptySub}>
+                Nhấn nút ＋ phía trên để thêm trang WordPress hoặc RSS nha khoa
+              </Text>
+            </View>
+          }
         />
       )}
 
       {/* Add Site Modal */}
       <Modal
-        visible={isAddSiteModalOpen}
+        visible={isAddModalOpen}
         transparent
         animationType="fade"
-        onRequestClose={() => setIsAddSiteModalOpen(false)}
+        onRequestClose={() => setIsAddModalOpen(false)}
       >
-        <View style={styles.modalBackdrop}>
-          <View style={[styles.modalCard, { backgroundColor: theme.card, borderColor: theme.cardBorder }]}>
-            <Text style={[styles.modalTitle, { color: theme.text }]}>Thêm Website Răng Hàm Mặt Mới</Text>
-            <Text style={[styles.modalDesc, { color: theme.textSecondary }]}>
-              Hỗ trợ tự động nhận diện WordPress REST API hoặc RSS Feed bài viết.
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Thêm trang web mới</Text>
+            <Text style={styles.modalSubtitle}>
+              Hỗ trợ tự động nhận diện REST API của WordPress và RSS Feed
             </Text>
 
             <TextInput
-              style={[
-                styles.modalInput,
-                {
-                  backgroundColor: theme.secondaryCard,
-                  color: theme.text,
-                  borderColor: theme.separator,
-                },
-              ]}
-              placeholder="https://trangwebnhakhoa.com"
-              placeholderTextColor={theme.textMuted}
+              style={styles.modalInput}
+              placeholder="VD: tuhocrhm.com hoặc https://..."
+              placeholderTextColor="#71717A"
               value={newSiteUrl}
               onChangeText={setNewSiteUrl}
               autoCapitalize="none"
               autoCorrect={false}
+              keyboardType="url"
             />
 
-            {addSiteError && (
-              <Text style={{ color: theme.danger, fontSize: 12, marginBottom: 10 }}>
-                {addSiteError}
-              </Text>
-            )}
+            {addSiteError ? (
+              <Text style={styles.modalError}>{addSiteError}</Text>
+            ) : null}
 
-            <View style={styles.modalBtnRow}>
+            <View style={styles.modalButtonsRow}>
               <TouchableOpacity
-                style={[styles.modalBtn, { borderColor: theme.separator, borderWidth: 1 }]}
-                onPress={() => setIsAddSiteModalOpen(false)}
+                style={styles.cancelButton}
+                onPress={() => {
+                  setIsAddModalOpen(false)
+                  setAddSiteError(null)
+                  setNewSiteUrl("")
+                }}
+                disabled={isAddingSite}
               >
-                <Text style={{ color: theme.textSecondary, fontWeight: "600" }}>Huỷ</Text>
+                <Text style={styles.cancelButtonText}>Hủy</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={[styles.modalBtn, { backgroundColor: theme.accent }]}
+                style={[
+                  styles.confirmButton,
+                  !newSiteUrl.trim() && styles.confirmButtonDisabled,
+                ]}
                 onPress={handleAddSite}
-                disabled={isAddingSite}
+                disabled={!newSiteUrl.trim() || isAddingSite}
               >
                 {isAddingSite ? (
-                  <ActivityIndicator size="small" color="#FFF" />
+                  <ActivityIndicator size="small" color="#FFFFFF" />
                 ) : (
-                  <Text style={{ color: "#FFF", fontWeight: "700" }}>Thêm Trang</Text>
+                  <Text style={styles.confirmButtonText}>Thêm trang</Text>
                 )}
               </TouchableOpacity>
             </View>
@@ -294,199 +315,241 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  header: {
-    paddingTop: 48,
+  headerContainer: {
+    flexDirection: "row",
+    alignItems: "center",
     paddingHorizontal: 16,
-    paddingBottom: 14,
-    borderBottomWidth: 1,
-  },
-  headerTitleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
-  logoIconBox: {
-    width: 40,
-    height: 40,
-    borderRadius: 10,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  appName: {
-    fontSize: 18,
-    fontWeight: "800",
-  },
-  appSub: {
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  quickNavRow: {
-    flexDirection: "row",
-    padding: 14,
+    paddingTop: 12,
+    paddingBottom: 8,
     gap: 10,
   },
-  quickCard: {
+  searchBar: {
     flex: 1,
-    padding: 12,
-    borderRadius: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#18181B",
     borderWidth: 1,
+    borderColor: "#27272A",
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    height: 44,
   },
-  quickCardTitle: {
+  searchIcon: {
     fontSize: 14,
-    fontWeight: "700",
-    marginBottom: 2,
+    marginRight: 8,
   },
-  quickCardDesc: {
-    fontSize: 11,
-    fontWeight: "600",
+  searchInput: {
+    flex: 1,
+    color: "#FFFFFF",
+    fontSize: 14,
   },
-  siteBanner: {
-    marginHorizontal: 14,
-    padding: 12,
-    borderRadius: 10,
-    borderWidth: 1,
-    marginBottom: 10,
-  },
-  siteInfoRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  siteTagRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    marginBottom: 2,
-  },
-  siteName: {
-    fontSize: 16,
-    fontWeight: "700",
-  },
-  siteTypeBadge: {
-    paddingHorizontal: 6,
-    paddingVertical: 1,
-    borderRadius: 4,
-  },
-  siteTypeText: {
-    fontSize: 10,
-    fontWeight: "700",
-  },
-  siteUrl: {
-    fontSize: 12,
-  },
-  addSiteIconBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 8,
-    alignItems: "center",
+  addButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: "#FF5C00",
     justifyContent: "center",
+    alignItems: "center",
+  },
+  addButtonIcon: {
+    color: "#FFFFFF",
+    fontSize: 22,
+    fontWeight: "700",
+    lineHeight: 24,
   },
   sectionHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "baseline",
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+    alignItems: "center",
+    paddingHorizontal: 18,
+    paddingTop: 8,
+    paddingBottom: 8,
   },
   sectionTitle: {
-    fontSize: 15,
-    fontWeight: "700",
-  },
-  sectionHint: {
     fontSize: 12,
+    fontWeight: "700",
+    color: "#71717A",
+    letterSpacing: 0.5,
+  },
+  sectionCount: {
+    fontSize: 12,
+    color: "#71717A",
   },
   listContent: {
+    paddingHorizontal: 16,
+    paddingBottom: 24,
+    gap: 10,
+  },
+  cardContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#18181B",
+    borderWidth: 1,
+    borderColor: "#27272A",
+    borderRadius: 16,
     paddingHorizontal: 14,
-    paddingBottom: 30,
+    height: 72,
+  },
+  avatarContainer: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: "#FFFFFF",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  infoContainer: {
+    flex: 1,
+    marginLeft: 12,
+    justifyContent: "center",
+  },
+  titleRow: {
+    flexDirection: "row",
+    alignItems: "center",
     gap: 8,
   },
-  catCard: {
-    borderWidth: 1,
-    borderRadius: 10,
-    padding: 12,
+  siteTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#FFFFFF",
+    flexShrink: 1,
+  },
+  typeBadge: {
+    backgroundColor: "rgba(255, 92, 0, 0.15)",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  typeBadgeText: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: "#FF5C00",
+  },
+  subtitleText: {
+    fontSize: 13,
+    color: "#A1A1AA",
+    marginTop: 4,
+  },
+  rightActionsRow: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
+    gap: 8,
+    paddingLeft: 6,
   },
-  catLeftRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    flex: 1,
-  },
-  catIconBox: {
-    width: 36,
-    height: 36,
-    borderRadius: 8,
+  starButton: {
+    padding: 4,
     alignItems: "center",
     justifyContent: "center",
   },
-  catName: {
-    fontSize: 14,
-    fontWeight: "700",
-    marginBottom: 2,
-  },
-  catSub: {
-    fontSize: 11,
-  },
-  countBadge: {
-    flexDirection: "row",
+  starredBadgeBox: {
     alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
+    justifyContent: "center",
   },
-  countText: {
-    fontSize: 12,
-    fontWeight: "700",
+  romanNumeralText: {
+    fontSize: 10,
+    fontWeight: "800",
+    color: "#F59E0B",
+    marginTop: -2,
   },
   centerContainer: {
     flex: 1,
-    alignItems: "center",
     justifyContent: "center",
-    padding: 30,
+    alignItems: "center",
   },
-  modalBackdrop: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(0, 0, 0, 0.7)",
+  loadingText: {
+    color: "#A1A1AA",
+    marginTop: 12,
+    fontSize: 14,
+  },
+  emptyContainer: {
+    paddingTop: 60,
     alignItems: "center",
+    paddingHorizontal: 32,
+  },
+  emptyTitle: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontWeight: "700",
+    marginBottom: 6,
+  },
+  emptySub: {
+    color: "#71717A",
+    fontSize: 13,
+    textAlign: "center",
+    lineHeight: 18,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.75)",
     justifyContent: "center",
-    padding: 20,
+    alignItems: "center",
+    paddingHorizontal: 20,
   },
   modalCard: {
     width: "100%",
-    borderRadius: 14,
+    backgroundColor: "#18181B",
     borderWidth: 1,
-    padding: 18,
+    borderColor: "#27272A",
+    borderRadius: 18,
+    padding: 20,
   },
   modalTitle: {
+    color: "#FFFFFF",
     fontSize: 17,
     fontWeight: "700",
     marginBottom: 6,
   },
-  modalDesc: {
+  modalSubtitle: {
+    color: "#A1A1AA",
     fontSize: 13,
+    marginBottom: 16,
     lineHeight: 18,
-    marginBottom: 12,
   },
   modalInput: {
-    height: 44,
+    backgroundColor: "#121214",
     borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 12,
+    borderColor: "#27272A",
+    borderRadius: 12,
+    color: "#FFFFFF",
+    fontSize: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginBottom: 12,
+  },
+  modalError: {
+    color: "#EF4444",
     fontSize: 13,
-    marginBottom: 14,
+    marginBottom: 12,
   },
-  modalBtnRow: {
+  modalButtonsRow: {
     flexDirection: "row",
+    justifyContent: "flex-end",
     gap: 10,
+    marginTop: 8,
   },
-  modalBtn: {
-    flex: 1,
-    height: 42,
-    borderRadius: 8,
-    alignItems: "center",
-    justifyContent: "center",
+  cancelButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: "#27272A",
+  },
+  cancelButtonText: {
+    color: "#E4E4E7",
+    fontWeight: "600",
+    fontSize: 14,
+  },
+  confirmButton: {
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: "#FF5C00",
+  },
+  confirmButtonDisabled: {
+    backgroundColor: "rgba(255, 92, 0, 0.4)",
+  },
+  confirmButtonText: {
+    color: "#FFFFFF",
+    fontWeight: "700",
+    fontSize: 14,
   },
 })

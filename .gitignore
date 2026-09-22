@@ -10,3 +10,5 @@ android/
 ios/
 .DS_Store
 *.local
+release-apk/
+*.apk
