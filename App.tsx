@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react"
 import { StatusBar } from "expo-status-bar"
-import { SafeAreaView, StyleSheet, View } from "react-native"
+import { StyleSheet, View } from "react-native"
+import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context"
 
 import { BottomNavBar, type TabKey } from "./src/components/BottomNavBar"
 import { CategoryPostsScreen } from "./src/screens/CategoryPostsScreen"
@@ -68,77 +69,79 @@ export default function App() {
   const isStackScreen = currentScreen !== "tab_root"
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
-      <StatusBar style="light" />
+    <SafeAreaProvider>
+      <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
+        <StatusBar style="light" />
 
-      <View style={styles.mainContent}>
-        {/* TAB ROOT SCREENS */}
-        {!isStackScreen && activeTab === "sites" && (
-          <HomeScreen onSelectSite={handleSelectSite} />
+        <View style={styles.mainContent}>
+          {/* TAB ROOT SCREENS */}
+          {!isStackScreen && activeTab === "sites" && (
+            <HomeScreen onSelectSite={handleSelectSite} />
+          )}
+
+          {!isStackScreen && activeTab === "chat" && <ChatAIScreen />}
+
+          {!isStackScreen && activeTab === "pdf" && <TelegramLibraryScreen />}
+
+          {!isStackScreen && activeTab === "settings" && <GeminiSettingsScreen />}
+
+          {/* STACK CHILD SCREENS */}
+          {currentScreen === "site_categories" && selectedSite && (
+            <SiteCategoriesScreen
+              site={selectedSite}
+              onBack={() => setCurrentScreen("tab_root")}
+              onSelectCategory={handleSelectCategory}
+              onOpenPromptSettings={(site) =>
+                handleOpenPromptSettings(site, "site_categories")
+              }
+              onSiteDeleted={() => setCurrentScreen("tab_root")}
+            />
+          )}
+
+          {currentScreen === "category_posts" && selectedCategory && selectedSite && (
+            <CategoryPostsScreen
+              siteUrl={selectedSite.url}
+              siteId={selectedSite.id}
+              site={selectedSite}
+              categoryId={String(selectedCategory.id)}
+              categoryName={selectedCategory.name}
+              categoryCount={selectedCategory.count}
+              onBack={() => setCurrentScreen("site_categories")}
+              onSelectPost={handleSelectPost}
+              onOpenPromptSettings={(site) =>
+                handleOpenPromptSettings(site, "category_posts")
+              }
+            />
+          )}
+
+          {currentScreen === "post_detail" && selectedPost && (
+            <PostDetailScreen
+              post={selectedPost}
+              site={selectedSite}
+              siteName={selectedSite?.name}
+              onBack={() => setCurrentScreen("category_posts")}
+              onOpenPromptSettings={(site) =>
+                handleOpenPromptSettings(site, "post_detail")
+              }
+            />
+          )}
+
+          {currentScreen === "site_prompt_settings" && selectedSite && (
+            <SitePromptSettingsScreen
+              site={selectedSite}
+              onBack={() =>
+                setCurrentScreen(previousScreenForPrompt || "site_categories")
+              }
+            />
+          )}
+        </View>
+
+        {/* 4-Tab Bottom Navigation Bar shown on tab root */}
+        {!isStackScreen && (
+          <BottomNavBar activeTab={activeTab} onSelectTab={handleSelectTab} />
         )}
-
-        {!isStackScreen && activeTab === "chat" && <ChatAIScreen />}
-
-        {!isStackScreen && activeTab === "pdf" && <TelegramLibraryScreen />}
-
-        {!isStackScreen && activeTab === "settings" && <GeminiSettingsScreen />}
-
-        {/* STACK CHILD SCREENS */}
-        {currentScreen === "site_categories" && selectedSite && (
-          <SiteCategoriesScreen
-            site={selectedSite}
-            onBack={() => setCurrentScreen("tab_root")}
-            onSelectCategory={handleSelectCategory}
-            onOpenPromptSettings={(site) =>
-              handleOpenPromptSettings(site, "site_categories")
-            }
-            onSiteDeleted={() => setCurrentScreen("tab_root")}
-          />
-        )}
-
-        {currentScreen === "category_posts" && selectedCategory && selectedSite && (
-          <CategoryPostsScreen
-            siteUrl={selectedSite.url}
-            siteId={selectedSite.id}
-            site={selectedSite}
-            categoryId={String(selectedCategory.id)}
-            categoryName={selectedCategory.name}
-            categoryCount={selectedCategory.count}
-            onBack={() => setCurrentScreen("site_categories")}
-            onSelectPost={handleSelectPost}
-            onOpenPromptSettings={(site) =>
-              handleOpenPromptSettings(site, "category_posts")
-            }
-          />
-        )}
-
-        {currentScreen === "post_detail" && selectedPost && (
-          <PostDetailScreen
-            post={selectedPost}
-            site={selectedSite}
-            siteName={selectedSite?.name}
-            onBack={() => setCurrentScreen("category_posts")}
-            onOpenPromptSettings={(site) =>
-              handleOpenPromptSettings(site, "post_detail")
-            }
-          />
-        )}
-
-        {currentScreen === "site_prompt_settings" && selectedSite && (
-          <SitePromptSettingsScreen
-            site={selectedSite}
-            onBack={() =>
-              setCurrentScreen(previousScreenForPrompt || "site_categories")
-            }
-          />
-        )}
-      </View>
-
-      {/* 4-Tab Bottom Navigation Bar shown on tab root */}
-      {!isStackScreen && (
-        <BottomNavBar activeTab={activeTab} onSelectTab={handleSelectTab} />
-      )}
-    </SafeAreaView>
+      </SafeAreaView>
+    </SafeAreaProvider>
   )
 }
 

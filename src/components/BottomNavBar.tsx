@@ -16,7 +16,15 @@ interface BottomNavBarProps {
 }
 
 export function BottomNavBar({ activeTab, onSelectTab }: BottomNavBarProps) {
-  const insets = useSafeAreaInsets()
+  let bottomInset = 8
+  try {
+    const insets = useSafeAreaInsets()
+    if (insets && typeof insets.bottom === "number") {
+      bottomInset = Math.max(insets.bottom, 8)
+    }
+  } catch {
+    bottomInset = 8
+  }
   const activeColor = "#FF5C00"
   const inactiveColor = "#71717A"
 
@@ -55,7 +63,7 @@ export function BottomNavBar({ activeTab, onSelectTab }: BottomNavBarProps) {
   ]
 
   return (
-    <View style={[styles.container, { paddingBottom: Math.max(insets.bottom, 8) }]}>
+    <View style={[styles.container, { paddingBottom: bottomInset }]}>
       <View style={styles.tabBar}>
         {tabs.map((tab) => {
           const isActive = activeTab === tab.key
