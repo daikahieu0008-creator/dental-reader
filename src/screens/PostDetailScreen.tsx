@@ -28,8 +28,10 @@ import {
   type VerificationResult,
   verifySummaryNumbers,
 } from "../services/ai/quality-checker"
+import { Eye2CuteReIcon } from "../icons/eye_2_cute_re"
+import { EyeCloseCuteReIcon } from "../icons/eye_close_cute_re"
 import type { SitePost } from "../services/site-scraper/types"
-import { updatePostSummary } from "../storage/database"
+import { getHiddenPostIds, toggleHidePost, updatePostSummary } from "../storage/database"
 import { readArticleHtml } from "../storage/file-storage"
 import { colors } from "../theme/colors"
 
@@ -62,9 +64,24 @@ export function PostDetailScreen({ post, siteName, onBack }: PostDetailScreenPro
   const [chatInput, setChatInput] = useState("")
   const [isAnswering, setIsAnswering] = useState(false)
 
+  // Hidden State
+  const [isHidden, setIsHidden] = useState(false)
+
   useEffect(() => {
     loadArticleContent()
+    getHiddenPostIds().then((ids) => {
+      setIsHidden(ids.includes(String(post.id)))
+    })
   }, [post.id])
+
+  const handleToggleHide = async () => {
+    try {
+      const newStatus = await toggleHidePost(post.id)
+      setIsHidden(newStatus)
+    } catch (err) {
+      console.error("Error toggling hide post:", err)
+    }
+  }
 
   const loadArticleContent = async () => {
     setIsLoadingArticle(true)
@@ -213,6 +230,35 @@ export function PostDetailScreen({ post, siteName, onBack }: PostDetailScreenPro
         </TouchableOpacity>
 
         <View style={styles.headerRightControls}>
+          {/* Nút Ẩn / Bỏ ẩn bài viết ngay trong màn hình đọc */}
+          <TouchableOpacity
+            style={[
+              styles.hideHeaderBtn,
+              {
+                backgroundColor: isHidden ? "rgba(255, 92, 0, 0.15)" : theme.secondaryCard,
+                borderColor: isHidden ? theme.accent : theme.separator,
+              },
+            ]}
+            onPress={handleToggleHide}
+            hitSlop={8}
+          >
+            {isHidden ? (
+              <Eye2CuteReIcon width={16} height={16} color={theme.accent} />
+            ) : (
+              <EyeCloseCuteReIcon width={16} height={16} color={theme.textSecondary} />
+            )}
+            <Text
+              style={{
+                fontSize: 12,
+                fontWeight: "600",
+                color: isHidden ? theme.accent : theme.textSecondary,
+                marginLeft: 4,
+              }}
+            >
+              {isHidden ? "Đã ẩn" : "Ẩn bài"}
+            </Text>
+          </TouchableOpacity>
+
           <TouchableOpacity
             style={[
               styles.ttsBtn,
@@ -221,7 +267,7 @@ export function PostDetailScreen({ post, siteName, onBack }: PostDetailScreenPro
             onPress={handleToggleTTS}
           >
             <Text style={{ fontSize: 13, color: isSpeaking ? "#FFF" : theme.text }}>
-              {isSpeaking ? "⏹ Dừng đọc" : "🔊 Nghe đọc"}
+              {isSpeaking ? "⏹ Dừng" : "🔊 Đọc"}
             </Text>
           </TouchableOpacity>
         </View>
@@ -486,6 +532,14 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
+  },
+  hideHeaderBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
   },
   ttsBtn: {
     paddingHorizontal: 12,

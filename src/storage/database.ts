@@ -89,6 +89,7 @@ export async function initDatabase(db?: any): Promise<void> {
       published_at TEXT,
       thumbnail TEXT,
       is_downloaded INTEGER DEFAULT 0,
+      is_hidden INTEGER DEFAULT 0,
       html_path TEXT,
       gemini_summary TEXT,
       model_used TEXT,
@@ -428,3 +429,64 @@ export async function searchTelegramBooks(query: string = ""): Promise<TelegramB
     return []
   }
 }
+
+// ---------------- Hidden Posts Methods ----------------
+
+const memHiddenPostIds = new Set<string>()
+
+export async function getHiddenPostIds(): Promise<string[]> {
+  const db = await getDb()
+  if (!db) return Array.from(memHiddenPostIds)
+  try {
+    const rows = await db.getAllAsync("SELECT id FROM posts WHERE is_hidden = 1")
+    return rows.map((r: any) => String(r.id))
+  } catch {
+    return Array.from(memHiddenPostIds)
+  }
+}
+
+export async function toggleHidePost(postId: string | number): Promise<boolean> {
+  const idStr = String(postId)
+  const db = await getDb()
+  if (!db) {
+    if (memHiddenPostIds.has(idStr)) {
+      memHiddenPostIds.delete(idStr)
+      return false
+    } else {
+      memHiddenPostIds.add(idStr)
+      return true
+    }
+  }
+
+  try {
+    const row: any = await db.getFirstAsync("SELECT is_hidden FROM posts WHERE id = ?", [idStr])
+    const newHidden = row?.is_hidden === 1 ? 0 : 1
+    await db.runAsync("UPDATE posts SET is_hidden = ? WHERE id = ?", [newHidden, idStr])
+    return newHidden === 1
+  } catch {
+    if (memHiddenPostIds.has(idStr)) {
+      memHiddenPostIds.delete(idStr)
+      return false
+    } else {
+      memHiddenPostIds.add(idStr)
+      return true
+    }
+  }
+}
+
+export async function setPostHidden(postId: string | number, isHidden: boolean): Promise<void> {
+  const idStr = String(postId)
+  const db = await getDb()
+  if (!db) {
+    if (isHidden) memHiddenPostIds.add(idStr)
+    else memHiddenPostIds.delete(idStr)
+    return
+  }
+  try {
+    await db.runAsync("UPDATE posts SET is_hidden = ? WHERE id = ?", [isHidden ? 1 : 0, idStr])
+  } catch {
+    if (isHidden) memHiddenPostIds.add(idStr)
+    else memHiddenPostIds.delete(idStr)
+  }
+}
+
