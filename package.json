@@ -11,8 +11,10 @@
   "dependencies": {
     "@react-native-async-storage/async-storage": "1.24.0",
     "expo": "~52.0.30",
+    "expo-asset": "~11.0.4",
     "expo-clipboard": "~7.0.0",
     "expo-file-system": "~18.0.7",
+    "expo-font": "~13.0.3",
     "expo-linking": "~7.0.4",
     "expo-secure-store": "~14.0.1",
     "expo-speech": "~13.0.0",
@@ -27,7 +29,9 @@
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
+    "@expo/metro-config": "~0.19.12",
     "@types/react": "~18.3.12",
+    "babel-preset-expo": "~12.0.8",
     "typescript": "^5.3.3"
   },
   "private": true
