@@ -53,13 +53,14 @@ export async function readArticleHtml(filePathOrUri: string): Promise<string> {
   }
 }
 
+import { getOrDownloadLocalImage } from "./image-cache"
+
 export async function cacheThumbnailOffline(
   imageUrl: string,
   _postId?: string | number,
 ): Promise<string> {
   if (!imageUrl || !imageUrl.startsWith("http")) return imageUrl
   try {
-    const { getOrDownloadLocalImage } = await import("../components/CachedImage")
     const local = await getOrDownloadLocalImage(imageUrl)
     return local || imageUrl
   } catch {

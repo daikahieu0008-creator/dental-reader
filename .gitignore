@@ -11,4 +11,5 @@ ios/
 .DS_Store
 *.local
 release-apk/
+build-artifacts/
 *.apk

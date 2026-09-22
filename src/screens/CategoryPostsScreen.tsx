@@ -25,6 +25,7 @@ import {
   getCategoryState,
   getHiddenPostIds,
   toggleHidePost,
+  updatePostThumbnail,
 } from "../storage/database"
 import { colors } from "../theme/colors"
 
@@ -74,7 +75,18 @@ export function CategoryPostsScreen({
       .filter((u): u is string => !!u && u.startsWith("http"))
 
     urls.forEach((u) => {
-      getOrDownloadLocalImage(u).catch(() => {})
+      getOrDownloadLocalImage(u)
+        .then((local) => {
+          if (local && local.startsWith("file://")) {
+            const match = posts.find(
+              (p) => p.thumbnail === u || p.featuredMedia === u,
+            )
+            if (match) {
+              updatePostThumbnail(match.id, local)
+            }
+          }
+        })
+        .catch(() => {})
     })
   }, [posts])
 

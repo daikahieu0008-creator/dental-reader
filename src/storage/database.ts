@@ -4,6 +4,7 @@
  */
 
 import type { SiteCategory, SiteMetadata, SitePost } from "../services/site-scraper/types"
+import { getLocalCachedUri } from "./image-cache"
 
 export interface TelegramBook {
   fileId: string
@@ -489,24 +490,63 @@ export async function getPostsByCategory(
     [siteId, categoryId],
   )
 
-  return rows.map((r: any) => ({
-    id: r.id,
-    siteId: r.site_id,
-    categoryId: r.category_id,
-    title: r.title,
-    slug: r.slug,
-    url: r.url,
-    content: "", // Full HTML stored on disk, fetched on demand
-    excerpt: r.excerpt,
-    author: r.author,
-    publishedAt: r.published_at,
-    thumbnail: r.thumbnail,
-    isDownloaded: Boolean(r.is_downloaded),
-    htmlPath: r.html_path,
-    geminiSummary: r.gemini_summary,
-    modelUsed: r.model_used,
-    isConsistent: Boolean(r.summary_consistent),
-  }))
+  return rows.map((r: any) => {
+    let thumb = r.thumbnail
+    if (thumb && thumb.startsWith("http")) {
+      const local = getLocalCachedUri(thumb)
+      if (local) {
+        thumb = local
+        db.runAsync("UPDATE posts SET thumbnail = ? WHERE id = ?", [local, r.id]).catch(() => {})
+      }
+    }
+    return {
+      id: r.id,
+      siteId: r.site_id,
+      categoryId: r.category_id,
+      title: r.title,
+      slug: r.slug,
+      url: r.url,
+      content: "", // Full HTML stored on disk, fetched on demand
+      excerpt: r.excerpt,
+      author: r.author,
+      publishedAt: r.published_at,
+      thumbnail: thumb,
+      featuredMedia: thumb,
+      isDownloaded: Boolean(r.is_downloaded),
+      htmlPath: r.html_path,
+      geminiSummary: r.gemini_summary,
+      modelUsed: r.model_used,
+      isConsistent: Boolean(r.summary_consistent),
+    }
+  })
+}
+
+export async function updatePostThumbnail(
+  postId: string | number,
+  thumbnailUri: string,
+): Promise<void> {
+  const db = await getDb()
+  if (!db) return
+  try {
+    await db.runAsync("UPDATE posts SET thumbnail = ? WHERE id = ?", [
+      thumbnailUri,
+      String(postId),
+    ])
+  } catch {}
+}
+
+export async function updatePostDownloadedState(
+  postId: string | number,
+  htmlPath: string,
+): Promise<void> {
+  const db = await getDb()
+  if (!db) return
+  try {
+    await db.runAsync(
+      "UPDATE posts SET is_downloaded = 1, html_path = ? WHERE id = ?",
+      [htmlPath, String(postId)],
+    )
+  } catch {}
 }
 
 export async function savePosts(posts: SitePost[]): Promise<void> {

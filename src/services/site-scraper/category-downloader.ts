@@ -14,6 +14,8 @@ import {
   getPostsByCategory,
   savePosts,
   updateCategoryState,
+  updatePostDownloadedState,
+  updatePostThumbnail,
 } from "../../storage/database"
 import { cacheThumbnailOffline, saveArticleHtml } from "../../storage/file-storage"
 import type { SitePost } from "./types"
@@ -75,25 +77,37 @@ export async function loadCategoryPostsInitial({
   )
   const firstPage = result.posts
 
-  // Save HTML bodies to disk and cache thumbnails locally
+  // Normalize thumbnails immediately
   for (const post of firstPage) {
-    if (post.content) {
-      const path = await saveArticleHtml(post.id, post.content)
-      ;(post as any).htmlPath = path
-      post.isDownloaded = true
-    }
-    const rawThumb = post.thumbnail || post.featuredMedia
-    if (rawThumb && rawThumb.startsWith("http")) {
-      try {
-        const localThumb = await cacheThumbnailOffline(rawThumb, post.id)
-        post.thumbnail = localThumb
-        post.featuredMedia = localThumb
-      } catch {}
-    }
+    post.thumbnail = post.thumbnail || post.featuredMedia
   }
 
+  // Save to SQLite immediately so posts are cached
   await savePosts(firstPage)
   await updateCategoryState(siteId, categoryId, 1, firstPage.length < 10)
+
+  // Asynchronously download HTML and cache thumbnails in background (non-blocking!)
+  ;(async () => {
+    for (const post of firstPage) {
+      if (post.content) {
+        saveArticleHtml(post.id, post.content)
+          .then((path) => updatePostDownloadedState(post.id, path))
+          .catch(() => {})
+      }
+      const rawThumb = post.thumbnail || post.featuredMedia
+      if (rawThumb && rawThumb.startsWith("http")) {
+        cacheThumbnailOffline(rawThumb, post.id)
+          .then((localThumb) => {
+            if (localThumb && localThumb.startsWith("file://")) {
+              post.thumbnail = localThumb
+              post.featuredMedia = localThumb
+              updatePostThumbnail(post.id, localThumb)
+            }
+          })
+          .catch(() => {})
+      }
+    }
+  })()
 
   return firstPage
 }
@@ -128,10 +142,23 @@ async function checkForNewPosts({
 
     if (trulyNewPosts.length > 0) {
       for (const p of trulyNewPosts) {
+        p.thumbnail = p.thumbnail || p.featuredMedia
         if (p.content) {
-          const path = await saveArticleHtml(p.id, p.content)
-          ;(p as any).htmlPath = path
-          p.isDownloaded = true
+          saveArticleHtml(p.id, p.content)
+            .then((path) => updatePostDownloadedState(p.id, path))
+            .catch(() => {})
+        }
+        const raw = p.thumbnail || p.featuredMedia
+        if (raw && raw.startsWith("http")) {
+          cacheThumbnailOffline(raw, p.id)
+            .then((local) => {
+              if (local && local.startsWith("file://")) {
+                p.thumbnail = local
+                p.featuredMedia = local
+                updatePostThumbnail(p.id, local)
+              }
+            })
+            .catch(() => {})
         }
       }
       await savePosts(trulyNewPosts)
@@ -206,24 +233,35 @@ export async function batchDownloadCategoryPosts({
       }
 
       for (const p of posts) {
-        if (p.content) {
-          const path = await saveArticleHtml(p.id, p.content)
-          ;(p as any).htmlPath = path
-          p.isDownloaded = true
-        }
-        const rawThumb = p.thumbnail || p.featuredMedia
-        if (rawThumb && rawThumb.startsWith("http")) {
-          try {
-            const localThumb = await cacheThumbnailOffline(rawThumb, p.id)
-            p.thumbnail = localThumb
-            p.featuredMedia = localThumb
-          } catch {}
-        }
+        p.thumbnail = p.thumbnail || p.featuredMedia
         newlyFetched.push(p)
       }
 
       fetchedInBatch += posts.length
       await savePosts(posts)
+
+      // Background download HTML and thumbnails for batch items
+      ;(async () => {
+        for (const p of posts) {
+          if (p.content) {
+            saveArticleHtml(p.id, p.content)
+              .then((path) => updatePostDownloadedState(p.id, path))
+              .catch(() => {})
+          }
+          const rawThumb = p.thumbnail || p.featuredMedia
+          if (rawThumb && rawThumb.startsWith("http")) {
+            cacheThumbnailOffline(rawThumb, p.id)
+              .then((localThumb) => {
+                if (localThumb && localThumb.startsWith("file://")) {
+                  p.thumbnail = localThumb
+                  p.featuredMedia = localThumb
+                  updatePostThumbnail(p.id, localThumb)
+                }
+              })
+              .catch(() => {})
+          }
+        }
+      })()
 
       if (posts.length < perPage) {
         isCategoryDone = true

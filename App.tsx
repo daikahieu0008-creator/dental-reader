@@ -14,6 +14,7 @@ import { SitePromptSettingsScreen } from "./src/screens/SitePromptSettingsScreen
 import { TelegramLibraryScreen } from "./src/screens/TelegramLibraryScreen"
 import type { SiteCategory, SiteMetadata, SitePost } from "./src/services/site-scraper/types"
 import { initDatabase } from "./src/storage/database"
+import { initThumbnailCacheIndex } from "./src/storage/image-cache"
 import { colors } from "./src/theme/colors"
 
 type ScreenType =
@@ -37,6 +38,7 @@ export default function App() {
     initDatabase().catch((err) => {
       console.error("Database init error:", err)
     })
+    initThumbnailCacheIndex().catch(() => {})
   }, [])
 
   const handleSelectSite = (site: SiteMetadata) => {
